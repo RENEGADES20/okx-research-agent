@@ -19,6 +19,18 @@ python -m pip install -e .
 python -m epi_agent.cli serve --port 8080
 ```
 
+Windows 本地一键启动：
+
+```powershell
+.\run_web.ps1
+```
+
+也可以直接运行：
+
+```powershell
+python serve.py
+```
+
 打开：
 
 ```text
