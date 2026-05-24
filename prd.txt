@@ -1,0 +1,939 @@
+# PRD — Event Probability Intelligence Agent
+
+## 项目名称
+
+Event Probability Intelligence Agent（EPI Agent）
+
+部署平台：
+
+* OKX Onchain OS
+* X Layer（后续）
+* OKX Wallet 生态
+
+---
+
+# 1. 项目定义
+
+一个基于 AI 的事件研究 Agent。
+
+核心功能：
+
+```text
+监控现实世界事件
+→ 映射相关预测市场
+→ 分析事件导致的概率变化
+→ 判断市场是否充分定价
+```
+
+Agent 输出：
+
+* probability update
+* market reaction
+* pricing inefficiency
+* research signal
+
+核心研究对象：
+
+```text
+现实世界事件
+如何改变 prediction market 的隐含概率。
+```
+
+---
+
+# 2. 当前阶段定位
+
+当前阶段聚焦两条主线：
+
+## 2.1 Finance / Macro Event Intelligence
+
+研究方向：
+
+* 宏观事件
+* 利率路径
+* 通胀预期
+* 美债收益率
+* 能源与大宗商品价格
+* 公司市值 / 私募估值 / 重大 corporate action
+* ETF 与监管事件（机会型覆盖）
+* prediction market repricing
+
+## 2.2 Politics / Geopolitical Event Intelligence
+
+研究方向：
+
+* 美国总统大选与党内提名
+* 美国国内政治事件
+* 主要国家选举
+* 国际冲突、停火、和平协议
+* 政权稳定性与领导人更替
+* 政府、法院、监管机构公告
+* political / geopolitical market repricing
+
+当前不研究：
+
+* 长周期 crypto 币价预测
+* technical analysis
+* K 线交易信号
+* 体育、娱乐等非本阶段重点市场
+
+研究重点：
+
+```text
+Event
+→ Probability Delta
+→ Market Repricing
+```
+
+---
+
+# 3. 当前重点市场（基于 Polymarket 当前活跃市场）
+
+本节基于 2026-05-24 对 Polymarket 官方 Gamma API 的抽样核对。
+
+重要修正：
+
+* Polymarket API 不应假设使用 `category=finance` 或 `category=politics`。
+* 市场发现应优先使用 `tag_id`、related tags、event slug、market slug。
+* 参考 tag：
+  * Finance：`tag_id=120`
+  * Politics：`tag_id=2`
+  * Fed：`tag_id=159`
+  * Fed Rates：`tag_id=100196`
+  * Inflation：`tag_id=702`
+  * Economy：`tag_id=100328`
+  * Macro Indicators：`tag_id=102000`
+
+---
+
+## 3.1 Finance / Macro 市场
+
+第一阶段重点覆盖：
+
+### Fed / 利率路径市场
+
+例如：
+
+* Fed Decision in June 2026
+* Fed Decision in July 2026
+* How many Fed rate cuts in 2026?
+* Fed rate hike in 2026?
+* Fed lower / upper bound by end of 2026
+
+对应事件：
+
+```text
+CPI
+PCE
+NFP
+FOMC
+Fed Speech
+Treasury Yield Move
+```
+
+### Inflation / 通胀市场
+
+例如：
+
+* May Inflation US - Annual
+* May Inflation US - Monthly
+* How high will inflation get in 2026?
+* Will inflation reach more than 4% / 5% / 6% in 2026?
+
+对应：
+
+```text
+实际通胀数据
+vs
+市场预期
+```
+
+属于标准：
+
+```text
+macro surprise
+→ probability repricing
+```
+
+场景。
+
+### Macro Indicators / 经济状态市场
+
+例如：
+
+* US economic state at the end of 2026
+* US unemployment reaches threshold in 2026
+* China annual GDP growth in 2026
+* Mexico GDP growth in Q2 2026
+
+对应：
+
+```text
+经济数据发布
+增长预期变化
+就业数据
+政策预期
+```
+
+### Energy / Commodity 市场
+
+例如：
+
+* What will WTI Crude Oil hit in May 2026?
+* Gas price threshold markets
+* Strait of Hormuz traffic returns to normal by end of May / June
+
+对应：
+
+```text
+地缘政治冲突
+供应链扰动
+能源库存
+OPEC / 政策新闻
+```
+
+### Company / Valuation 市场
+
+例如：
+
+* Largest company end of May
+* 2nd largest company end of May
+* Will Anthropic's valuation hit threshold by December 31?
+* Will Nebius Group be acquired before 2027?
+
+对应：
+
+```text
+earnings
+AI infrastructure news
+fundraising / valuation round
+M&A
+market cap move
+```
+
+### ETF / Regulation 市场（机会型覆盖）
+
+例如：
+
+* ETF approval
+* SEC action
+* regulation timeline
+
+对应：
+
+```text
+监管事件
+→ 市场风险偏好变化
+→ prediction market repricing
+```
+
+说明：
+
+```text
+ETF / Regulation 不再作为 Finance 第一优先级。
+当前 Polymarket Finance 抽样里更突出的市场是 Fed、inflation、energy、company / valuation。
+```
+
+---
+
+## 3.2 Politics / Geopolitics 市场
+
+政治板块进入当前 MVP，不再只是长期扩展方向。
+
+### US Election / Nomination 市场
+
+例如：
+
+* Presidential Election Winner 2028
+* Democratic Presidential Nominee 2028
+* Republican Presidential Nominee 2028
+* individual candidate nominee / winner markets
+
+对应事件：
+
+```text
+polling
+endorsement
+campaign announcement
+fundraising
+debate
+legal / health / scandal event
+primary calendar
+```
+
+### US Domestic Politics 市场
+
+例如：
+
+* government official announcement markets
+* court / regulatory / political announcement markets
+* policy timeline markets
+
+对应：
+
+```text
+White House statement
+Congress action
+court ruling
+agency announcement
+state-level political event
+```
+
+### Geopolitical / Conflict 市场
+
+例如：
+
+* US x Iran permanent peace deal by date
+* Iran ceasefire continues through date
+* US announces new Iran agreement / ceasefire extension by date
+* Will the Iranian regime fall by June 30?
+* Strait of Hormuz traffic returns to normal by date
+
+对应：
+
+```text
+ceasefire
+peace agreement
+military escalation
+sanctions
+diplomatic statement
+regime stability signal
+shipping / energy disruption
+```
+
+### International Election 市场
+
+例如：
+
+* Brazil Presidential Election
+* Next French Presidential Election
+* California Governor Election Winner
+* Peru Presidential Election Winner
+
+对应：
+
+```text
+polling
+party nomination
+candidate withdrawal
+coalition formation
+court / electoral authority ruling
+major campaign event
+```
+
+---
+
+# 4. 产品核心逻辑
+
+核心抽象：
+
+```text
+Event
+→ Probability Update
+→ Market Reaction
+```
+
+核心问题：
+
+```text
+某个事件发生后，
+市场概率是否已经充分反映该事件？
+```
+
+Agent 核心能力：
+
+```text
+识别：
+underreaction
+overreaction
+delayed repricing
+```
+
+---
+
+# 5. Agent 工作流程
+
+# Step 1 — Event Detection
+
+监控：
+
+* 新闻源
+* 宏观经济日历
+* Twitter/X
+* 官方公告
+* election polls
+* official government statements
+* ceasefire / war / peace agreement updates
+* court / regulatory / political announcement
+* market move
+
+触发：
+
+```text
+event ingestion
+```
+
+---
+
+# Step 2 — Event Classification
+
+Agent 识别：
+
+* event type
+* vertical
+* importance
+* directional impact
+* related assets
+* related markets
+
+事件类型：
+
+```text
+macro_event
+political_event
+geopolitical_event
+regulatory_event
+corporate_event
+market_move_event
+```
+
+例如：
+
+```text
+CPI 高于预期
+→ macro_event
+→ hawkish
+→ rate-cut probability down
+→ yields up
+```
+
+```text
+US-Iran ceasefire 延长
+→ geopolitical_event
+→ escalation risk down
+→ oil disruption probability down
+→ peace agreement probability up
+```
+
+---
+
+# Step 3 — Market Mapping
+
+将事件映射到 prediction market。
+
+Polymarket mapping 优先级：
+
+```text
+tag_id
+→ related tags
+→ event slug
+→ market slug
+→ semantic similarity
+```
+
+例如：
+
+```text
+Event:
+Higher CPI
+
+Markets:
+Fed Decision in June / July
+How many Fed rate cuts in 2026
+Inflation threshold markets
+10Y / mortgage / macro indicator markets
+```
+
+```text
+Event:
+New Iran ceasefire extension
+
+Markets:
+Iran ceasefire continues through date
+US x Iran permanent peace deal by date
+Strait of Hormuz traffic returns to normal
+WTI / energy threshold markets
+```
+
+---
+
+# Step 4 — Probability Update
+
+输出：
+
+```text
+Before probability
+After probability estimate
+Probability delta
+Confidence score
+```
+
+例如：
+
+```text
+Before: 45%
+After estimate: 35%-38%
+Market price: 42%
+```
+
+---
+
+# Step 5 — Market Repricing Analysis
+
+输出：
+
+```text
+underreacted
+overreacted
+repriced appropriately
+```
+
+参考：
+
+* market speed
+* orderbook
+* liquidity
+* spread
+* historical analog
+
+---
+
+# Step 6 — Research Memory
+
+自动生成 Event Card。
+
+用于：
+
+* replay
+* historical analog
+* post-mortem
+* retrieval
+
+---
+
+# 6. 核心模块
+
+# 6.1 Event Ingestion Layer
+
+负责：
+
+* RSS/news feed
+* economic calendar
+* Twitter/X
+* official data source
+* polling source
+* government / court / regulatory announcements
+* conflict and diplomacy updates
+
+能力：
+
+* 去重
+* 标准化
+* importance scoring
+* source reliability scoring
+
+---
+
+# 6.2 Event Ontology Layer
+
+项目核心壁垒。
+
+定义：
+
+```text
+什么事件
+属于哪个 vertical
+影响什么市场
+影响方向是什么
+影响窗口有多长
+```
+
+例如：
+
+```text
+Hawkish CPI
+→ finance_macro
+→ rate-cut probability down
+```
+
+```text
+Ceasefire extension
+→ politics_geopolitics
+→ conflict escalation probability down
+→ peace agreement probability up
+→ oil disruption probability down
+```
+
+---
+
+# 6.3 Probability Update Engine
+
+系统核心 intelligence layer。
+
+目标：
+
+```text
+评估：
+当前 prediction market 概率是否合理。
+```
+
+输出：
+
+* fair probability range
+* delta
+* confidence
+* reasoning
+
+---
+
+# 6.4 Market Intelligence Layer
+
+负责：
+
+* market price
+* orderbook
+* liquidity
+* spread
+* midpoint
+* historical price
+* repricing speed
+
+---
+
+# 6.5 Polymarket Integration Layer
+
+第一阶段 prediction market 数据源为 Polymarket。
+
+数据发现：
+
+```text
+Gamma API /public-search
+→ 发现 tags / events / markets
+```
+
+市场列表：
+
+```text
+Gamma API /markets?tag_id={tag_id}&active=true&closed=false
+→ 获取活跃市场
+```
+
+定价与盘口：
+
+```text
+CLOB / public pricing API
+→ orderbook
+→ spread
+→ midpoint
+→ historical price
+```
+
+说明：
+
+```text
+Polymarket 网站板块与 API 字段不一定一一对应。
+实现时以 tag_id、related tags、event slug、market slug 作为主要索引。
+```
+
+---
+
+# 6.6 Historical Event Memory
+
+存储：
+
+* event
+* vertical
+* event type
+* source type
+* probability update
+* market reaction
+* final outcome
+
+用于：
+
+* retrieval
+* calibration
+* historical analog
+* future backtesting
+
+---
+
+# 6.7 Event Card Data Model
+
+Event Card 字段：
+
+```text
+event_id
+event_time
+vertical: finance_macro | politics_geopolitics
+event_type
+source_type
+event_summary
+related_polymarket_tags
+affected_markets
+expected_direction
+before_probability
+after_probability_estimate
+market_price
+probability_delta
+confidence_score
+market_repricing_status
+reasoning
+final_outcome
+```
+
+---
+
+# 7. 系统架构
+
+```text
+Data Sources
+    ↓
+Event Ingestion Layer
+    ↓
+Event Classification Layer
+    ↓
+Market Mapping Layer
+    ↓
+Probability Update Engine
+    ↓
+Research Signal Layer
+    ↓
+Database / Knowledge Base
+    ↓
+OKX Onchain OS Agent Interface
+```
+
+---
+
+# 8. Onchain OS 集成方向
+
+Agent 部署于：
+
+* OKX Onchain OS
+* OKX Wallet
+* X Layer（后续）
+
+Onchain OS 负责：
+
+* agent runtime
+* wallet connection
+* user identity
+* future subscription layer
+* future strategy layer
+
+---
+
+# 9. MVP 功能范围
+
+# Included
+
+## Event Monitoring
+
+支持：
+
+* 宏观数据发布
+* Fed event
+* inflation event
+* Treasury yield event
+* energy / commodity event
+* company valuation / M&A event
+* ETF / regulation event（机会型覆盖）
+* election polls
+* official government statements
+* ceasefire / war / peace agreement updates
+* court / regulatory / political announcement
+
+---
+
+## Prediction Market Integration
+
+第一阶段：
+
+* Polymarket
+
+支持：
+
+* market discovery via tag_id
+* related tags
+* event slug
+* market slug
+* market price
+* orderbook
+* liquidity
+* spread
+* midpoint
+* historical price
+
+---
+
+## Agent Output
+
+输出：
+
+```text
+事件摘要
+事件类型
+所属板块
+相关市场
+概率变化
+市场反应
+confidence score
+pricing inefficiency
+```
+
+---
+
+## Research Journal
+
+自动保存：
+
+* Event Card
+* probability update
+* market reaction
+* analyst note
+
+---
+
+# 10. 推荐技术栈
+
+## Backend
+
+* Python
+* FastAPI
+* PostgreSQL
+
+---
+
+## AI Layer
+
+* OpenAI API
+* embeddings
+* RAG
+* retrieval system
+
+---
+
+## Frontend / Agent UI
+
+* Next.js
+* Tailwind
+* shadcn/ui
+
+---
+
+## Infra
+
+* Docker
+* Railway / AWS
+
+---
+
+# 11. MVP 开发顺序
+
+# Phase 1
+
+Event ingestion for macro + politics.
+
+目标：
+
+```text
+稳定监控宏观、政治、地缘政治事件。
+```
+
+---
+
+# Phase 2
+
+Polymarket market discovery and integration.
+
+目标：
+
+```text
+使用 tag_id / event slug / market slug 获取 Polymarket 市场数据。
+```
+
+---
+
+# Phase 3
+
+Market mapping ontology.
+
+目标：
+
+```text
+把 macro_event、political_event、geopolitical_event 映射到相关 prediction markets。
+```
+
+---
+
+# Phase 4
+
+Probability update engine.
+
+目标：
+
+```text
+生成 fair probability range 和 probability delta。
+```
+
+---
+
+# Phase 5
+
+Research dashboard.
+
+目标：
+
+```text
+展示：
+事件
+板块
+概率变化
+市场反应
+pricing inefficiency
+```
+
+---
+
+# Phase 6
+
+Historical event memory.
+
+目标：
+
+```text
+形成 event intelligence database。
+```
+
+---
+
+# 12. 长期扩展方向
+
+未来扩展：
+
+* Sports Probability Market
+* Entertainment Forecasting
+* Historical Event Graph
+* Agent Marketplace
+* Strategy Subscription Layer
+
+长期核心资产：
+
+```text
+事件
+↔
+概率变化
+↔
+市场反应
+```
+
+---
+
+# 13. 参考资料
+
+Polymarket 官方资料：
+
+* Gamma API docs: https://docs.polymarket.com/api-reference
+* List markets: https://docs.polymarket.com/api-reference/markets/list-markets
+* Search API: https://docs.polymarket.com/api-reference/search/search-markets-events-and-profiles

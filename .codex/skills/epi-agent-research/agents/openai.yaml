@@ -1,0 +1,4 @@
+interface:
+  display_name: "EPI Agent Research"
+  short_description: "Maintain the EPI Agent PRD and Polymarket market taxonomy."
+  default_prompt: "Use $epi-agent-research to update the EPI Agent PRD with current Polymarket market structure."
