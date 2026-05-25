@@ -1,4 +1,18 @@
-from epi_agent.market_universe import apply_consistency_checks, dashboard_summary, parse_market_snapshot
+from epi_agent.market_universe import (
+    apply_consistency_checks,
+    dashboard_summary,
+    enrich_snapshot_with_orderbook,
+    parse_market_snapshot,
+)
+
+
+class FakeOrderbookClient:
+    def get_orderbook(self, token_id: str):
+        assert token_id == "yes-token"
+        return {
+            "bids": [{"price": "0.44", "size": "100"}, {"price": "0.43", "size": "50"}],
+            "asks": [{"price": "0.46", "size": "80"}, {"price": "0.47", "size": "70"}],
+        }
 
 
 def test_parse_market_snapshot_prefers_bid_ask_midpoint():
@@ -22,6 +36,26 @@ def test_parse_market_snapshot_prefers_bid_ask_midpoint():
     assert snapshot.benchmark_source == "bid_ask_midpoint"
     assert snapshot.vertical == "finance_macro"
     assert snapshot.bias_bucket == "none"
+
+
+def test_orderbook_enrichment_updates_benchmark_and_depth():
+    snapshot = parse_market_snapshot(
+        {
+            "id": "book",
+            "question": "Will inflation reach more than 4% in 2026?",
+            "bestBid": "0.30",
+            "bestAsk": "0.70",
+            "clobTokenIds": '["yes-token", "no-token"]',
+        }
+    )
+
+    assert enrich_snapshot_with_orderbook(FakeOrderbookClient(), snapshot)
+
+    assert snapshot.benchmark_probability == 0.45
+    assert snapshot.benchmark_source == "clob_orderbook_midpoint"
+    assert snapshot.orderbook_bid_depth == 150
+    assert snapshot.orderbook_ask_depth == 150
+    assert snapshot.orderbook_depth_imbalance == 0
 
 
 def test_dashboard_summary_counts_bias_buckets():

@@ -30,16 +30,26 @@ class EPIAgentService:
     def recent_cards(self, limit: int = 50) -> list[dict]:
         return self.store.list_recent(limit=limit)
 
-    def sync_markets(self, *, tab: str = "all", limit_per_tag: int = 30) -> dict:
+    def sync_markets(
+        self,
+        *,
+        tab: str = "all",
+        limit_per_tag: int = 30,
+        enrich_orderbook: bool = False,
+        max_orderbooks: int = 25,
+    ) -> dict:
         snapshots = sync_market_universe(
             self.client,
             tab_id=tab,
             limit_per_tag=limit_per_tag,
+            enrich_orderbook=enrich_orderbook,
+            max_orderbooks=max_orderbooks,
         )
         self.store.save_market_snapshots(snapshots)
         return {
             "synced": len(snapshots),
             "tab": tab,
+            "enrich_orderbook": enrich_orderbook,
             "latest_sync": self.store.latest_market_sync(),
         }
 
@@ -92,6 +102,14 @@ def _sort_markets(markets: list[dict], sort: str) -> list[dict]:
             _number(market.get("bias_score")),
             _number(market.get("liquidity")),
         ),
+        "depth_low": lambda market: (
+            -_number(_orderbook_depth(market), missing=10**18),
+            _number(market.get("bias_score")),
+        ),
+        "depth_imbalance": lambda market: (
+            abs(_number(market.get("orderbook_depth_imbalance"))),
+            _number(market.get("bias_score")),
+        ),
         "spread_desc": lambda market: (
             _number(market.get("spread")),
             _number(market.get("bias_score")),
@@ -138,6 +156,14 @@ def _number(value: object, *, missing: float = 0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return missing
+
+
+def _orderbook_depth(market: dict) -> float | None:
+    bid = market.get("orderbook_bid_depth")
+    ask = market.get("orderbook_ask_depth")
+    if bid is None or ask is None:
+        return None
+    return _number(bid) + _number(ask)
 
 
 def _end_timestamp(value: object) -> float:

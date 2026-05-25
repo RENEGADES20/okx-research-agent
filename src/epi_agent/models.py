@@ -84,6 +84,13 @@ class MarketSnapshot:
     last_trade_price: float | None = None
     outcome_price: float | None = None
     spread: float | None = None
+    orderbook_bid_depth: float | None = None
+    orderbook_ask_depth: float | None = None
+    orderbook_depth_imbalance: float | None = None
+    orderbook_spread: float | None = None
+    orderbook_midpoint: float | None = None
+    orderbook_levels: int | None = None
+    orderbook_synced_at: str | None = None
     liquidity: float | None = None
     volume: float | None = None
     volume_24h: float | None = None

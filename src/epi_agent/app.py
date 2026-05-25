@@ -42,7 +42,14 @@ class EPIRequestHandler(BaseHTTPRequestHandler):
             payload = self._read_json()
             tab = payload.get("tab", "all")
             limit_per_tag = int(payload.get("limit_per_tag", 30))
-            result = self.service.sync_markets(tab=tab, limit_per_tag=limit_per_tag)
+            enrich_orderbook = bool(payload.get("enrich_orderbook", False))
+            max_orderbooks = int(payload.get("max_orderbooks", 25))
+            result = self.service.sync_markets(
+                tab=tab,
+                limit_per_tag=limit_per_tag,
+                enrich_orderbook=enrich_orderbook,
+                max_orderbooks=max_orderbooks,
+            )
             self._send_json(result, status=HTTPStatus.CREATED)
             return
 
@@ -117,6 +124,7 @@ def _dashboard_html() -> str:
         <h1>Market Pricing Dashboard</h1>
       </div>
       <div class="top-actions">
+        <label><input id="deep-book" type="checkbox"> Deep book</label>
         <button id="sync-markets" type="button">Sync Markets</button>
         <button id="refresh" type="button" class="secondary">Refresh</button>
       </div>
@@ -129,6 +137,7 @@ def _dashboard_html() -> str:
       <article class="metric"><span>Bias candidates</span><strong id="metric-biased">0</strong></article>
       <article class="metric"><span>Severe / Moderate</span><strong id="metric-risk">0 / 0</strong></article>
       <article class="metric"><span>Structure flags</span><strong id="metric-structure">0</strong></article>
+      <article class="metric"><span>Deep books</span><strong id="metric-books">0</strong></article>
       <article class="metric"><span>Ending soon</span><strong id="metric-ending">0</strong></article>
       <article class="metric"><span>Avg confidence</span><strong id="metric-confidence">0%</strong></article>
     </section>
@@ -150,6 +159,8 @@ def _dashboard_html() -> str:
           <select id="sort-select">
             <option value="bias_desc">Bias score</option>
             <option value="structure_flags">Structure flags</option>
+            <option value="depth_low">Book depth low</option>
+            <option value="depth_imbalance">Depth imbalance</option>
             <option value="spread_desc">Spread high</option>
             <option value="liquidity_asc">Liquidity low</option>
             <option value="liquidity_desc">Liquidity high</option>
@@ -167,6 +178,7 @@ def _dashboard_html() -> str:
                 <th>Market</th>
                 <th>Benchmark</th>
                 <th>Spread</th>
+                <th>Depth</th>
                 <th>Liquidity</th>
                 <th>Bucket</th>
                 <th>Ends</th>
@@ -186,8 +198,8 @@ def _dashboard_html() -> str:
           <h2>Sources & Logic</h2>
           <dl class="logic-list">
             <div><dt>Live source</dt><dd>Polymarket Gamma API</dd></div>
-            <div><dt>Benchmark</dt><dd>bid/ask midpoint, then outcome price, then last trade</dd></div>
-            <div><dt>Bias now</dt><dd>spread, liquidity, volume, staleness, ending soon, missing price</dd></div>
+            <div><dt>Benchmark</dt><dd>CLOB midpoint when synced, then bid/ask midpoint, outcome price, last trade</dd></div>
+            <div><dt>Bias now</dt><dd>spread, liquidity, depth, volume, staleness, ending soon, missing price</dd></div>
             <div><dt>Next pricing</dt><dd>macro surprise + market sensitivity -> fair probability</dd></div>
           </dl>
         </section>
@@ -205,7 +217,7 @@ def _dashboard_html() -> str:
             <option value="government">government</option>
             <option value="social">social</option>
           </select>
-          <label><input id="live-markets" type="checkbox" checked> Live Polymarket</label>
+              <label><input id="live-markets" type="checkbox" checked> Live Polymarket</label>
           <button type="submit">Analyze</button>
         </div>
       </form>
@@ -231,6 +243,7 @@ def _dashboard_html() -> str:
     const tabs = document.querySelector("#market-tabs");
     const bucketFilter = document.querySelector("#bucket-filter");
     const sortSelect = document.querySelector("#sort-select");
+    const deepBook = document.querySelector("#deep-book");
     const marketRows = document.querySelector("#market-rows");
     const endingSoon = document.querySelector("#ending-soon");
     const syncState = document.querySelector("#sync-state");
@@ -279,6 +292,7 @@ def _dashboard_html() -> str:
       document.querySelector("#metric-biased").textContent = summary.bias_candidates || 0;
       document.querySelector("#metric-risk").textContent = `${buckets.severe || 0} / ${buckets.moderate || 0}`;
       document.querySelector("#metric-structure").textContent = summary.structure_flags || 0;
+      document.querySelector("#metric-books").textContent = summary.orderbook_markets || 0;
       document.querySelector("#metric-ending").textContent = summary.ending_soon || 0;
       document.querySelector("#metric-confidence").textContent = pct(summary.avg_benchmark_confidence || 0);
     }
@@ -286,7 +300,7 @@ def _dashboard_html() -> str:
     function renderMarkets() {
       const bucket = bucketFilter.value;
       const markets = (dashboardData?.markets || []).filter(m => !bucket || m.bias_bucket === bucket);
-      marketRows.innerHTML = markets.map(renderMarketRow).join("") || `<tr><td colspan="6" class="empty-cell">No markets synced for this tab yet.</td></tr>`;
+      marketRows.innerHTML = markets.map(renderMarketRow).join("") || `<tr><td colspan="7" class="empty-cell">No markets synced for this tab yet.</td></tr>`;
     }
 
     function renderMarketRow(market) {
@@ -298,10 +312,20 @@ def _dashboard_html() -> str:
         </td>
         <td>${pct(market.benchmark_probability)}<span>${market.benchmark_source}</span></td>
         <td>${pct(market.spread)}</td>
+        <td>${depthLabel(market)}</td>
         <td>${money(market.liquidity)}</td>
         <td><b class="bucket ${market.bias_bucket}">${market.bias_bucket}</b></td>
         <td>${shortDate(market.end_date)}</td>
       </tr>`;
+    }
+
+    function depthLabel(market) {
+      if (market.orderbook_bid_depth === null || market.orderbook_bid_depth === undefined) return "n/a";
+      const total = Number(market.orderbook_bid_depth || 0) + Number(market.orderbook_ask_depth || 0);
+      const imbalance = market.orderbook_depth_imbalance === null || market.orderbook_depth_imbalance === undefined
+        ? "n/a"
+        : market.orderbook_depth_imbalance.toFixed(2);
+      return `${total.toFixed(0)}<span>imb ${imbalance}</span>`;
     }
 
     function renderEndingSoon(markets) {
@@ -354,7 +378,12 @@ def _dashboard_html() -> str:
         await fetch("/api/markets/sync", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tab: "all", limit_per_tag: 40 })
+          body: JSON.stringify({
+            tab: "all",
+            limit_per_tag: 40,
+            enrich_orderbook: document.querySelector("#deep-book").checked,
+            max_orderbooks: 30
+          })
         });
         await loadDashboard();
       } finally {

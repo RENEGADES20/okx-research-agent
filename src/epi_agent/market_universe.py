@@ -15,10 +15,14 @@ def sync_market_universe(
     *,
     tab_id: str = "all",
     limit_per_tag: int = 30,
+    enrich_orderbook: bool = False,
+    max_orderbooks: int = 25,
 ) -> list[MarketSnapshot]:
     tab = tab_definition(tab_id)
     snapshots: list[MarketSnapshot] = []
     seen: set[str] = set()
+
+    orderbooks_used = 0
 
     for tag_id in tab["tag_ids"]:
         try:
@@ -35,6 +39,9 @@ def sync_market_universe(
                 continue
             if not _matches_tab(snapshot, tab):
                 continue
+            if enrich_orderbook and orderbooks_used < max_orderbooks and snapshot.clob_token_ids:
+                if enrich_snapshot_with_orderbook(client, snapshot):
+                    orderbooks_used += 1
             seen.add(key)
             snapshots.append(snapshot)
 
@@ -127,18 +134,83 @@ def parse_market_snapshot(
     )
 
 
+def enrich_snapshot_with_orderbook(client: PolymarketClient, snapshot: MarketSnapshot) -> bool:
+    token_id = next((str(token_id) for token_id in snapshot.clob_token_ids if token_id), None)
+    if not token_id:
+        return False
+    try:
+        orderbook = client.get_orderbook(token_id)
+    except PolymarketError:
+        return False
+
+    bids = _parse_book_levels(orderbook.get("bids") or orderbook.get("buys") or [], reverse=True)
+    asks = _parse_book_levels(orderbook.get("asks") or orderbook.get("sells") or [], reverse=False)
+    if not bids or not asks:
+        return False
+
+    best_bid = bids[0][0]
+    best_ask = asks[0][0]
+    bid_depth = round(sum(size for _, size in bids[:5]), 4)
+    ask_depth = round(sum(size for _, size in asks[:5]), 4)
+    total_depth = bid_depth + ask_depth
+    imbalance = round((bid_depth - ask_depth) / total_depth, 4) if total_depth else None
+    midpoint = _midpoint(best_bid, best_ask)
+    spread = round(max(best_ask - best_bid, 0.0), 4)
+
+    snapshot.best_bid = best_bid
+    snapshot.best_ask = best_ask
+    snapshot.midpoint = midpoint
+    snapshot.spread = spread
+    snapshot.orderbook_bid_depth = bid_depth
+    snapshot.orderbook_ask_depth = ask_depth
+    snapshot.orderbook_depth_imbalance = imbalance
+    snapshot.orderbook_spread = spread
+    snapshot.orderbook_midpoint = midpoint
+    snapshot.orderbook_levels = len(bids) + len(asks)
+    snapshot.orderbook_synced_at = utc_now_iso()
+
+    snapshot.benchmark_probability, snapshot.benchmark_source = _benchmark_probability(
+        midpoint=midpoint,
+        outcome_price=snapshot.outcome_price,
+        last_trade_price=snapshot.last_trade_price,
+        orderbook_midpoint=midpoint,
+    )
+    snapshot.benchmark_confidence = _benchmark_confidence(
+        benchmark_probability=snapshot.benchmark_probability,
+        benchmark_source=snapshot.benchmark_source,
+        spread=snapshot.spread,
+        liquidity=snapshot.liquidity,
+        volume=snapshot.volume,
+        staleness_hours=snapshot.staleness_hours,
+        orderbook_levels=snapshot.orderbook_levels,
+        orderbook_total_depth=total_depth,
+    )
+    snapshot.bias_score, snapshot.bias_bucket, snapshot.bias_reasons = _bias_score(
+        benchmark_probability=snapshot.benchmark_probability,
+        spread=snapshot.spread,
+        liquidity=snapshot.liquidity,
+        volume=snapshot.volume,
+        staleness_hours=snapshot.staleness_hours,
+        ending_soon=snapshot.ending_soon,
+        orderbook_total_depth=total_depth,
+    )
+    return True
+
+
 def dashboard_summary(markets: list[dict[str, Any]]) -> dict[str, Any]:
     buckets = {"severe": 0, "moderate": 0, "watch": 0, "none": 0}
     ending_soon = 0
     with_probability = 0
     total_confidence = 0.0
     structure_flags = 0
+    orderbook_markets = 0
 
     for market in markets:
         bucket = market.get("bias_bucket") or "none"
         buckets[bucket] = buckets.get(bucket, 0) + 1
         ending_soon += int(bool(market.get("ending_soon")))
         structure_flags += int(bool(market.get("consistency_issue")))
+        orderbook_markets += int(market.get("orderbook_synced_at") is not None)
         if market.get("benchmark_probability") is not None:
             with_probability += 1
         total_confidence += float(market.get("benchmark_confidence") or 0.0)
@@ -153,6 +225,7 @@ def dashboard_summary(markets: list[dict[str, Any]]) -> dict[str, Any]:
         "bias_buckets": buckets,
         "ending_soon": ending_soon,
         "structure_flags": structure_flags,
+        "orderbook_markets": orderbook_markets,
         "avg_benchmark_confidence": avg_confidence,
     }
 
@@ -239,8 +312,10 @@ def _benchmark_probability(
     midpoint: float | None,
     outcome_price: float | None,
     last_trade_price: float | None,
+    orderbook_midpoint: float | None = None,
 ) -> tuple[float | None, str]:
     for value, source in (
+        (orderbook_midpoint, "clob_orderbook_midpoint"),
         (midpoint, "bid_ask_midpoint"),
         (outcome_price, "outcome_price"),
         (last_trade_price, "last_trade_price"),
@@ -258,11 +333,15 @@ def _benchmark_confidence(
     liquidity: float | None,
     volume: float | None,
     staleness_hours: float | None,
+    orderbook_levels: int | None = None,
+    orderbook_total_depth: float | None = None,
 ) -> float:
     if benchmark_probability is None:
         return 0.0
     score = 0.55
-    if benchmark_source == "bid_ask_midpoint":
+    if benchmark_source == "clob_orderbook_midpoint":
+        score += 0.22
+    elif benchmark_source == "bid_ask_midpoint":
         score += 0.18
     if spread is not None:
         score += 0.12 if spread <= 0.04 else -0.16 if spread >= 0.12 else 0.0
@@ -272,6 +351,10 @@ def _benchmark_confidence(
         score += 0.05
     if staleness_hours is not None and staleness_hours > 24:
         score -= 0.12
+    if orderbook_levels is not None:
+        score += 0.04 if orderbook_levels >= 6 else -0.05
+    if orderbook_total_depth is not None:
+        score += 0.06 if orderbook_total_depth >= 500 else -0.08
     return round(max(0.0, min(score, 0.98)), 3)
 
 
@@ -283,6 +366,7 @@ def _bias_score(
     volume: float | None,
     staleness_hours: float | None,
     ending_soon: bool,
+    orderbook_total_depth: float | None = None,
 ) -> tuple[float, str, list[str]]:
     score = 0.0
     reasons: list[str] = []
@@ -313,6 +397,9 @@ def _bias_score(
     if ending_soon and (spread is None or spread >= 0.08):
         score += 0.16
         reasons.append("ending soon with weak book")
+    if orderbook_total_depth is not None and orderbook_total_depth < 100:
+        score += 0.14
+        reasons.append("thin CLOB depth")
 
     score = round(min(score, 1.0), 3)
     return score, _bucket_for_score(score), reasons
@@ -394,6 +481,23 @@ def _json_list(value: Any) -> list:
     if isinstance(value, list):
         return value
     return [value]
+
+
+def _parse_book_levels(levels: list[Any], *, reverse: bool) -> list[tuple[float, float]]:
+    parsed: list[tuple[float, float]] = []
+    for level in levels:
+        if isinstance(level, dict):
+            price = _as_float(level.get("price"))
+            size = _as_float(level.get("size") or level.get("shares"))
+        elif isinstance(level, (list, tuple)) and len(level) >= 2:
+            price = _as_float(level[0])
+            size = _as_float(level[1])
+        else:
+            continue
+        if price is None or size is None or size <= 0:
+            continue
+        parsed.append((round(price, 4), round(size, 4)))
+    return sorted(parsed, key=lambda item: item[0], reverse=reverse)
 
 
 def _midpoint(best_bid: float | None, best_ask: float | None) -> float | None:

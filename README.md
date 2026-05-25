@@ -48,6 +48,8 @@ references/pricing-theory.md
 
 * Bias score
 * Structure flags
+* Book depth low
+* Depth imbalance
 * Spread high
 * Liquidity low / high
 * Ending soon
@@ -58,14 +60,15 @@ references/pricing-theory.md
 当前实际接入的数据源：
 
 * Polymarket Gamma API：市场列表、问题文本、tag、event slug、end date、liquidity、volume、outcome price、best bid / best ask 等字段。
-* Polymarket CLOB orderbook：客户端已有 `get_orderbook()` 接口，后续会用于补充更细盘口；当前 dashboard 优先使用 Gamma 返回的 bid / ask 字段。
+* Polymarket CLOB orderbook：勾选 `Deep book` 后，会拉取部分市场的 CLOB 盘口，计算 top-5 bid depth、ask depth、depth imbalance、CLOB midpoint。
 * SQLite 本地缓存：保存 market benchmark snapshot 和 Event Card，避免每次刷新都重新抓取历史数据。
 
 当前定价逻辑：
 
 ```text
 benchmark_probability =
-best_bid / best_ask midpoint
+CLOB orderbook midpoint
+-> best_bid / best_ask midpoint
 -> outcomePrices
 -> lastTradePrice
 ```
@@ -76,6 +79,7 @@ best_bid / best_ask midpoint
 bias_score =
 wide spread
 + low liquidity
++ thin CLOB depth
 + low volume
 + stale benchmark
 + ending soon with weak book
@@ -95,6 +99,21 @@ P(CPI > 4%) >= P(CPI > 5%) >= P(CPI > 6%)
 ```text
 repricing_gap = model_fair_probability - market_benchmark_probability
 ```
+
+项目已加入定价模型内核：
+
+```text
+src/epi_agent/pricing_model.py
+```
+
+该模块使用 log-odds event update：
+
+```text
+posterior_logit = logit(benchmark_probability) + evidence_weight
+fair_probability = sigmoid(posterior_logit)
+```
+
+理论依据来自 `references/pricing-theory.md` 中的预测市场概率解释、Bayesian / conditional probability update、event study 和 proper scoring rules。当前 dashboard 尚未把宏观 surprise 自动接入该模型；下一步会把 `actual - forecast` 转成 `surprise_z`，再生成真正的 fair probability。
 
 ## 运行
 

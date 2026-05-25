@@ -83,11 +83,14 @@ class EventStore:
                     vertical, tab, tags, tag_ids, outcomes, clob_token_ids, active,
                     closed, end_date, benchmark_probability, benchmark_source,
                     best_bid, best_ask, midpoint, last_trade_price, outcome_price,
-                    spread, liquidity, volume, volume_24h, updated_at, synced_at,
-                    staleness_hours, benchmark_confidence, bias_score, bias_bucket,
-                    bias_reasons, ending_soon
+                    spread, orderbook_bid_depth, orderbook_ask_depth,
+                    orderbook_depth_imbalance, orderbook_spread, orderbook_midpoint,
+                    orderbook_levels, orderbook_synced_at, liquidity, volume,
+                    volume_24h, updated_at, synced_at, staleness_hours,
+                    benchmark_confidence, bias_score, bias_bucket, bias_reasons,
+                    ending_soon
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [self._market_snapshot_values(snapshot) for snapshot in snapshots],
             )
@@ -191,6 +194,13 @@ class EventStore:
                     last_trade_price REAL,
                     outcome_price REAL,
                     spread REAL,
+                    orderbook_bid_depth REAL,
+                    orderbook_ask_depth REAL,
+                    orderbook_depth_imbalance REAL,
+                    orderbook_spread REAL,
+                    orderbook_midpoint REAL,
+                    orderbook_levels INTEGER,
+                    orderbook_synced_at TEXT,
                     liquidity REAL,
                     volume REAL,
                     volume_24h REAL,
@@ -205,6 +215,7 @@ class EventStore:
                 )
                 """
             )
+            self._ensure_market_snapshot_columns(conn)
 
     @staticmethod
     def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
@@ -240,6 +251,13 @@ class EventStore:
             snapshot.last_trade_price,
             snapshot.outcome_price,
             snapshot.spread,
+            snapshot.orderbook_bid_depth,
+            snapshot.orderbook_ask_depth,
+            snapshot.orderbook_depth_imbalance,
+            snapshot.orderbook_spread,
+            snapshot.orderbook_midpoint,
+            snapshot.orderbook_levels,
+            snapshot.orderbook_synced_at,
             snapshot.liquidity,
             snapshot.volume,
             snapshot.volume_24h,
@@ -262,6 +280,25 @@ class EventStore:
         value["closed"] = bool(value["closed"])
         value["ending_soon"] = bool(value["ending_soon"])
         return value
+
+    @staticmethod
+    def _ensure_market_snapshot_columns(conn: sqlite3.Connection) -> None:
+        existing = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(market_snapshots)").fetchall()
+        }
+        migrations = {
+            "orderbook_bid_depth": "REAL",
+            "orderbook_ask_depth": "REAL",
+            "orderbook_depth_imbalance": "REAL",
+            "orderbook_spread": "REAL",
+            "orderbook_midpoint": "REAL",
+            "orderbook_levels": "INTEGER",
+            "orderbook_synced_at": "TEXT",
+        }
+        for column, column_type in migrations.items():
+            if column not in existing:
+                conn.execute(f"ALTER TABLE market_snapshots ADD COLUMN {column} {column_type}")
 
 
 def markets_from_dicts(items: list[dict[str, Any]]) -> list[Market]:

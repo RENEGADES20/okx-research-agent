@@ -28,6 +28,7 @@ def test_store_persists_market_snapshots(tmp_path: Path):
             "question": "How many Fed rate cuts in 2026?",
             "bestBid": "0.2",
             "bestAsk": "0.5",
+            "clobTokenIds": '["yes-token"]',
             "liquidity": "100",
             "tags": [{"id": 100196, "label": "Fed Rates"}],
         },
