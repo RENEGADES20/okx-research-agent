@@ -6,7 +6,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from .models import EventCard, MacroRelease, Market, MarketSnapshot
+from .models import EventCard, MacroRelease, Market, MarketPricingSignal, MarketSnapshot
 
 
 DEFAULT_DB_PATH = Path("data/epi_agent.sqlite3")
@@ -178,6 +178,35 @@ class EventStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def save_pricing_signals(self, signals: list[MarketPricingSignal]) -> None:
+        if not signals:
+            return
+        with self._connect() as conn:
+            conn.executemany(
+                """
+                INSERT OR REPLACE INTO pricing_signals (
+                    signal_id, release_id, release_name, market_id, question,
+                    benchmark_probability, fair_probability, repricing_gap,
+                    abs_gap, direction, match_score, confidence_score,
+                    bucket, reasons, method, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [self._pricing_signal_values(signal) for signal in signals],
+            )
+
+    def list_pricing_signals(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM pricing_signals
+                ORDER BY abs_gap DESC, confidence_score DESC, created_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [self._pricing_signal_row_to_dict(row) for row in rows]
+
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
@@ -278,6 +307,28 @@ class EventStore:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS pricing_signals (
+                    signal_id TEXT PRIMARY KEY,
+                    release_id TEXT NOT NULL,
+                    release_name TEXT NOT NULL,
+                    market_id TEXT NOT NULL,
+                    question TEXT NOT NULL,
+                    benchmark_probability REAL NOT NULL,
+                    fair_probability REAL NOT NULL,
+                    repricing_gap REAL NOT NULL,
+                    abs_gap REAL NOT NULL,
+                    direction INTEGER NOT NULL,
+                    match_score REAL NOT NULL,
+                    confidence_score REAL NOT NULL,
+                    bucket TEXT NOT NULL,
+                    reasons TEXT NOT NULL,
+                    method TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
             self._ensure_market_snapshot_columns(conn)
 
     @staticmethod
@@ -342,6 +393,33 @@ class EventStore:
         value["active"] = bool(value["active"])
         value["closed"] = bool(value["closed"])
         value["ending_soon"] = bool(value["ending_soon"])
+        return value
+
+    @staticmethod
+    def _pricing_signal_values(signal: MarketPricingSignal) -> tuple:
+        return (
+            signal.signal_id,
+            signal.release_id,
+            signal.release_name,
+            signal.market_id,
+            signal.question,
+            signal.benchmark_probability,
+            signal.fair_probability,
+            signal.repricing_gap,
+            signal.abs_gap,
+            signal.direction,
+            signal.match_score,
+            signal.confidence_score,
+            signal.bucket,
+            json.dumps(signal.reasons),
+            signal.method,
+            signal.created_at,
+        )
+
+    @staticmethod
+    def _pricing_signal_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+        value = dict(row)
+        value["reasons"] = json.loads(value["reasons"]) if value.get("reasons") else []
         return value
 
     @staticmethod

@@ -165,6 +165,70 @@ class MacroRelease:
         return asdict(self)
 
 
+@dataclass(slots=True)
+class MarketPricingSignal:
+    signal_id: str
+    release_id: str
+    release_name: str
+    market_id: str
+    question: str
+    benchmark_probability: float
+    fair_probability: float
+    repricing_gap: float
+    abs_gap: float
+    direction: int
+    match_score: float
+    confidence_score: float
+    bucket: str
+    reasons: list[str]
+    method: str = "macro_log_odds_signal"
+    created_at: str = field(default_factory=utc_now_iso)
+
+    @classmethod
+    def build(
+        cls,
+        *,
+        release: MacroRelease,
+        market: dict[str, Any],
+        fair_probability: float,
+        repricing_gap: float,
+        direction: int,
+        match_score: float,
+        confidence_score: float,
+        reasons: list[str],
+    ) -> "MarketPricingSignal":
+        abs_gap = round(abs(repricing_gap), 4)
+        return cls(
+            signal_id=str(uuid4()),
+            release_id=release.release_id,
+            release_name=release.event_name,
+            market_id=str(market["market_id"]),
+            question=str(market["question"]),
+            benchmark_probability=round(float(market["benchmark_probability"]), 4),
+            fair_probability=round(fair_probability, 4),
+            repricing_gap=round(repricing_gap, 4),
+            abs_gap=abs_gap,
+            direction=int(direction),
+            match_score=round(match_score, 3),
+            confidence_score=round(confidence_score, 3),
+            bucket=_signal_bucket(abs_gap),
+            reasons=reasons,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+def _signal_bucket(abs_gap: float) -> str:
+    if abs_gap >= 0.15:
+        return "severe"
+    if abs_gap >= 0.08:
+        return "moderate"
+    if abs_gap >= 0.03:
+        return "watch"
+    return "none"
+
+
 def _surprise_z(
     *,
     actual: float | None,

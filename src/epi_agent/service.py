@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .engine import analyze_event
 from .macro_data import TradingEconomicsCalendarClient, macro_release_from_payload
+from .macro_pricing import generate_macro_pricing_signals
 from .market_universe import apply_consistency_checks, dashboard_summary, sync_market_universe
 from .models import EventCard, EventInput
 from .polymarket import PolymarketClient
@@ -38,6 +39,7 @@ class EPIAgentService:
         result = {
             "release": release.to_dict(),
             "fair_probability_estimate": None,
+            "market_pricing_signals": [],
         }
 
         benchmark = _optional_float(payload.get("benchmark_probability"))
@@ -56,10 +58,21 @@ class EPIAgentService:
                 liquidity_adjustment=liquidity_adjustment if liquidity_adjustment is not None else 1.0,
             )
             result["fair_probability_estimate"] = estimate.to_dict()
+
+        market_signals = generate_macro_pricing_signals(
+            release,
+            self.store.list_market_snapshots(tab="all", limit=500),
+            source_reliability=reliability if reliability is not None else 0.8,
+        )
+        self.store.save_pricing_signals(market_signals)
+        result["market_pricing_signals"] = [signal.to_dict() for signal in market_signals]
         return result
 
     def recent_macro_releases(self, limit: int = 20) -> list[dict]:
         return self.store.list_macro_releases(limit=limit)
+
+    def pricing_signals(self, limit: int = 20) -> list[dict]:
+        return self.store.list_pricing_signals(limit=limit)
 
     def sync_macro_calendar(self, *, country: str = "United States", limit: int = 50) -> dict:
         client = TradingEconomicsCalendarClient()
@@ -113,6 +126,8 @@ class EPIAgentService:
             "ending_soon": ending_soon,
             "recent_events": self.recent_cards(limit=8),
             "recent_macro_releases": self.recent_macro_releases(limit=8),
+            "pricing_signals": self.pricing_signals(limit=8),
+            "pricing_signal_summary": _pricing_signal_summary(self.pricing_signals(limit=100)),
         }
 
 
@@ -240,3 +255,15 @@ def _direction(value: object) -> int:
     if text in {"0", "neutral", "none"}:
         return 0
     return 1
+
+
+def _pricing_signal_summary(signals: list[dict]) -> dict:
+    buckets = {"severe": 0, "moderate": 0, "watch": 0, "none": 0}
+    for signal in signals:
+        bucket = signal.get("bucket") or "none"
+        buckets[bucket] = buckets.get(bucket, 0) + 1
+    return {
+        "total": len(signals),
+        "actionable": buckets["severe"] + buckets["moderate"] + buckets["watch"],
+        "buckets": buckets,
+    }

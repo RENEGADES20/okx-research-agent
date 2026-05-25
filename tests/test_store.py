@@ -2,6 +2,7 @@ from pathlib import Path
 
 from epi_agent.models import EventCard, EventInput
 from epi_agent.macro_data import macro_release_from_payload
+from epi_agent.macro_pricing import generate_macro_pricing_signals
 from epi_agent.market_universe import parse_market_snapshot
 from epi_agent.service import EPIAgentService
 from epi_agent.store import EventStore
@@ -64,3 +65,35 @@ def test_store_persists_macro_release(tmp_path: Path):
     assert rows[0]["event_name"] == "US CPI YoY"
     assert rows[0]["surprise"] == 0.3
     assert rows[0]["surprise_z"] == 3.0
+
+
+def test_store_persists_pricing_signals(tmp_path: Path):
+    store = EventStore(tmp_path / "events.sqlite3")
+    release = macro_release_from_payload(
+        {
+            "event_name": "US CPI YoY",
+            "actual": "3.4",
+            "forecast": "3.1",
+            "previous": "3.0",
+        }
+    )
+    signals = generate_macro_pricing_signals(
+        release,
+        [
+            {
+                "market_id": "inflation-4",
+                "question": "Will inflation reach more than 4% in 2026?",
+                "vertical": "finance_macro",
+                "tags": ["Inflation"],
+                "benchmark_probability": 0.45,
+                "benchmark_confidence": 0.8,
+            }
+        ],
+    )
+
+    store.save_pricing_signals(signals)
+    rows = store.list_pricing_signals()
+
+    assert len(rows) == 1
+    assert rows[0]["release_name"] == "US CPI YoY"
+    assert rows[0]["reasons"]

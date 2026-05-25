@@ -32,6 +32,11 @@ class EPIRequestHandler(BaseHTTPRequestHandler):
             limit = int(params.get("limit", ["20"])[0])
             self._send_json({"releases": self.service.recent_macro_releases(limit=limit)})
             return
+        if parsed.path == "/api/pricing/signals":
+            params = parse_qs(parsed.query)
+            limit = int(params.get("limit", ["20"])[0])
+            self._send_json({"signals": self.service.pricing_signals(limit=limit)})
+            return
         if parsed.path == "/api/dashboard":
             params = parse_qs(parsed.query)
             tab = params.get("tab", ["all"])[0]
@@ -169,6 +174,7 @@ def _dashboard_html() -> str:
       <article class="metric"><span>Structure flags</span><strong id="metric-structure">0</strong></article>
       <article class="metric"><span>Deep books</span><strong id="metric-books">0</strong></article>
       <article class="metric"><span>Ending soon</span><strong id="metric-ending">0</strong></article>
+      <article class="metric"><span>Model gaps</span><strong id="metric-model-gaps">0</strong></article>
       <article class="metric"><span>Avg confidence</span><strong id="metric-confidence">0%</strong></article>
     </section>
 
@@ -287,6 +293,13 @@ def _dashboard_html() -> str:
 
     <section>
       <div class="section-title">
+        <h2>Macro Pricing Signals</h2>
+      </div>
+      <div id="pricing-signals" class="cards signal-cards"></div>
+    </section>
+
+    <section>
+      <div class="section-title">
         <h2>Research Journal</h2>
       </div>
       <div id="events" class="cards compact"></div>
@@ -310,6 +323,7 @@ def _dashboard_html() -> str:
     const syncState = document.querySelector("#sync-state");
     const macroReleases = document.querySelector("#macro-releases");
     const macroEstimate = document.querySelector("#macro-estimate");
+    const pricingSignals = document.querySelector("#pricing-signals");
 
     async function loadDashboard() {
       const res = await fetch(`/api/dashboard?tab=${selectedTab}&sort=${sortSelect.value}&limit=120`);
@@ -320,6 +334,7 @@ def _dashboard_html() -> str:
       renderEndingSoon(dashboardData.ending_soon || []);
       renderEvents(dashboardData.recent_events || []);
       renderMacroReleases(dashboardData.recent_macro_releases || []);
+      renderPricingSignals(dashboardData.pricing_signals || []);
       syncState.textContent = dashboardData.latest_sync
         ? `Latest market sync: ${formatDate(dashboardData.latest_sync)}`
         : "Sync Polymarket markets to populate the dashboard.";
@@ -358,6 +373,7 @@ def _dashboard_html() -> str:
       document.querySelector("#metric-structure").textContent = summary.structure_flags || 0;
       document.querySelector("#metric-books").textContent = summary.orderbook_markets || 0;
       document.querySelector("#metric-ending").textContent = summary.ending_soon || 0;
+      document.querySelector("#metric-model-gaps").textContent = dashboardData?.pricing_signal_summary?.actionable || 0;
       document.querySelector("#metric-confidence").textContent = pct(summary.avg_benchmark_confidence || 0);
     }
 
@@ -428,6 +444,25 @@ def _dashboard_html() -> str:
           <div><dt>Confidence</dt><dd>${pct(estimate.confidence_score)}</dd></div>
         </dl>
       `;
+    }
+
+    function renderPricingSignals(items) {
+      pricingSignals.innerHTML = items.map(signal => `
+        <article class="card signal-card">
+          <div class="card-head">
+            <span>${signal.release_name}</span>
+            <strong class="bucket ${signal.bucket}">${signal.bucket}</strong>
+          </div>
+          <h3>${signal.question}</h3>
+          <dl>
+            <div><dt>Benchmark</dt><dd>${pct(signal.benchmark_probability)}</dd></div>
+            <div><dt>Fair</dt><dd>${pct(signal.fair_probability)}</dd></div>
+            <div><dt>Gap</dt><dd>${pct(signal.repricing_gap)}</dd></div>
+            <div><dt>Confidence</dt><dd>${pct(signal.confidence_score)}</dd></div>
+          </dl>
+          <p>${(signal.reasons || []).join(", ")}</p>
+        </article>
+      `).join("") || '<p class="empty">No model repricing gaps yet. Submit a macro release after syncing markets.</p>';
     }
 
     function renderCard(card) {
@@ -529,6 +564,7 @@ def _dashboard_html() -> str:
         });
         const result = await res.json();
         renderMacroEstimate(result);
+        renderPricingSignals(result.market_pricing_signals || []);
         macroForm.reset();
         document.querySelector("#macro-sensitivity").value = "0.35";
         document.querySelector("#macro-reliability").value = "0.8";

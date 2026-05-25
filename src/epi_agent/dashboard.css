@@ -31,7 +31,8 @@ body {
 
 .topbar,
 .summary-grid,
-.content-grid {
+.content-grid,
+.signal-cards {
   margin-bottom: 18px;
 }
 
@@ -144,7 +145,7 @@ input {
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(7, minmax(130px, 1fr));
+  grid-template-columns: repeat(8, minmax(120px, 1fr));
   gap: 12px;
 }
 
@@ -416,6 +417,30 @@ label {
 
 .card-head strong {
   color: var(--green);
+}
+
+.card-head .bucket {
+  min-width: 86px;
+}
+
+.card-head .bucket.severe {
+  color: var(--red);
+}
+
+.card-head .bucket.moderate {
+  color: var(--amber);
+}
+
+.card-head .bucket.watch {
+  color: var(--accent);
+}
+
+.card-head .bucket.none {
+  color: var(--green);
+}
+
+.signal-card h3 {
+  min-height: 76px;
 }
 
 .card h3 {

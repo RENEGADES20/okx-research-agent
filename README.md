@@ -167,6 +167,7 @@ GET /api/health
 GET /api/dashboard?tab=all&sort=bias_desc&limit=80
 GET /api/events?limit=20
 GET /api/macro/releases?limit=20
+GET /api/pricing/signals?limit=20
 POST /api/markets/sync
 POST /api/events
 POST /api/macro/releases
@@ -199,6 +200,19 @@ POST /api/macro/sync
 ```
 
 `POST /api/macro/releases` 会保存发布数据，计算 `surprise = actual - forecast` 与 `surprise_z`，并在提供 `benchmark_probability` 时调用 `src/epi_agent/pricing_model.py` 生成 `fair_probability_estimate`。Dashboard 右侧的 `Macro Release Lab` 已接入同一条链路。
+
+如果本地已经同步了 Polymarket 市场，该接口还会自动匹配相关市场，生成并保存 `market_pricing_signals`：
+
+```text
+macro release
+-> matched Polymarket market
+-> benchmark probability
+-> log-odds fair probability
+-> repricing gap
+-> severe / moderate / watch bucket
+```
+
+Dashboard 中的 `Macro Pricing Signals` 会展示这些模型缺口。当前匹配层是可解释启发式：CPI/PCE/PPI 映射 inflation 与 Fed/rates，NFP/unemployment/claims 映射 labor 与 rates/recession，GDP/PMI/ISM 映射 growth，EIA/OPEC/oil 映射 energy。后续可替换为 embedding 检索、历史窗口回测和校准后的 sensitivity。
 
 `POST /api/macro/sync` 是可选 Trading Economics economic calendar 接口，需要环境变量：
 
