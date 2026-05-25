@@ -6,7 +6,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from .models import EventCard, Market, MarketSnapshot
+from .models import EventCard, MacroRelease, Market, MarketSnapshot
 
 
 DEFAULT_DB_PATH = Path("data/epi_agent.sqlite3")
@@ -136,6 +136,48 @@ class EventStore:
             row = conn.execute("SELECT MAX(synced_at) AS synced_at FROM market_snapshots").fetchone()
         return row["synced_at"] if row and row["synced_at"] else None
 
+    def save_macro_release(self, release: MacroRelease) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO macro_releases (
+                    release_id, event_name, country, category, release_time,
+                    actual, forecast, previous, unit, source, source_url,
+                    surprise, surprise_z, importance, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    release.release_id,
+                    release.event_name,
+                    release.country,
+                    release.category,
+                    release.release_time,
+                    release.actual,
+                    release.forecast,
+                    release.previous,
+                    release.unit,
+                    release.source,
+                    release.source_url,
+                    release.surprise,
+                    release.surprise_z,
+                    release.importance,
+                    release.created_at,
+                ),
+            )
+
+    def list_macro_releases(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM macro_releases
+                ORDER BY release_time DESC, created_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
@@ -212,6 +254,27 @@ class EventStore:
                     bias_bucket TEXT NOT NULL,
                     bias_reasons TEXT NOT NULL,
                     ending_soon INTEGER NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS macro_releases (
+                    release_id TEXT PRIMARY KEY,
+                    event_name TEXT NOT NULL,
+                    country TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    release_time TEXT NOT NULL,
+                    actual REAL,
+                    forecast REAL,
+                    previous REAL,
+                    unit TEXT,
+                    source TEXT NOT NULL,
+                    source_url TEXT,
+                    surprise REAL,
+                    surprise_z REAL,
+                    importance INTEGER NOT NULL,
+                    created_at TEXT NOT NULL
                 )
                 """
             )

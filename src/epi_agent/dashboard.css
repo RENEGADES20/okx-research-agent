@@ -79,7 +79,8 @@ h2 {
 }
 
 button,
-select {
+select,
+input {
   height: 38px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -112,6 +113,13 @@ button.secondary,
 }
 
 select {
+  padding: 0 10px;
+  background: var(--surface);
+}
+
+input {
+  width: 100%;
+  min-width: 0;
   padding: 0 10px;
   background: var(--surface);
 }
@@ -335,6 +343,40 @@ textarea {
   line-height: 1.45;
 }
 
+.stack-form {
+  display: grid;
+  gap: 10px;
+}
+
+.field-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.field-grid.two {
+  grid-template-columns: 1fr 1fr;
+}
+
+.field-grid.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.estimate-box {
+  margin-top: 12px;
+  padding: 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+
+.estimate-box:empty {
+  display: none;
+}
+
+.estimate-box dl {
+  margin: 0;
+}
+
 .controls {
   flex-wrap: wrap;
   margin-top: 10px;
@@ -444,6 +486,11 @@ li span {
 
   .top-actions {
     flex-wrap: wrap;
+  }
+
+  .field-grid.two,
+  .field-grid.three {
+    grid-template-columns: 1fr;
   }
 
   h1 {

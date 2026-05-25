@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from .engine import analyze_event
+from .macro_data import TradingEconomicsCalendarClient, macro_release_from_payload
 from .market_universe import apply_consistency_checks, dashboard_summary, sync_market_universe
 from .models import EventCard, EventInput
 from .polymarket import PolymarketClient
+from .pricing_model import estimate_fair_probability
 from .store import EventStore
 from .taxonomy import market_tabs, tab_definition
 
@@ -29,6 +31,47 @@ class EPIAgentService:
 
     def recent_cards(self, limit: int = 50) -> list[dict]:
         return self.store.list_recent(limit=limit)
+
+    def submit_macro_release(self, payload: dict) -> dict:
+        release = macro_release_from_payload(payload)
+        self.store.save_macro_release(release)
+        result = {
+            "release": release.to_dict(),
+            "fair_probability_estimate": None,
+        }
+
+        benchmark = _optional_float(payload.get("benchmark_probability"))
+        sensitivity = _optional_float(payload.get("market_sensitivity"), default=0.25)
+        reliability = _optional_float(payload.get("source_reliability"), default=0.8)
+        time_decay = _optional_float(payload.get("time_decay"), default=1.0)
+        liquidity_adjustment = _optional_float(payload.get("liquidity_adjustment"), default=1.0)
+        if benchmark is not None and release.surprise_z is not None:
+            estimate = estimate_fair_probability(
+                benchmark_probability=benchmark,
+                direction=_direction(payload.get("direction", 1)),
+                surprise_z=release.surprise_z,
+                market_sensitivity=sensitivity if sensitivity is not None else 0.25,
+                source_reliability=reliability if reliability is not None else 0.8,
+                time_decay=time_decay if time_decay is not None else 1.0,
+                liquidity_adjustment=liquidity_adjustment if liquidity_adjustment is not None else 1.0,
+            )
+            result["fair_probability_estimate"] = estimate.to_dict()
+        return result
+
+    def recent_macro_releases(self, limit: int = 20) -> list[dict]:
+        return self.store.list_macro_releases(limit=limit)
+
+    def sync_macro_calendar(self, *, country: str = "United States", limit: int = 50) -> dict:
+        client = TradingEconomicsCalendarClient()
+        releases = client.latest_calendar(country=country, limit=limit)
+        for release in releases:
+            self.store.save_macro_release(release)
+        return {
+            "synced": len(releases),
+            "country": country,
+            "source": "trading_economics",
+            "releases": [release.to_dict() for release in releases],
+        }
 
     def sync_markets(
         self,
@@ -69,6 +112,7 @@ class EPIAgentService:
             "markets": markets,
             "ending_soon": ending_soon,
             "recent_events": self.recent_cards(limit=8),
+            "recent_macro_releases": self.recent_macro_releases(limit=8),
         }
 
 
@@ -178,3 +222,21 @@ def _end_timestamp(value: object) -> float:
         return parsed.timestamp()
     except ValueError:
         return 10**18
+
+
+def _optional_float(value: object, *, default: float | None = None) -> float | None:
+    if value is None or value == "":
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _direction(value: object) -> int:
+    text = str(value).strip().lower()
+    if text in {"-1", "down", "lower", "dovish", "bearish", "no"}:
+        return -1
+    if text in {"0", "neutral", "none"}:
+        return 0
+    return 1

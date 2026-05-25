@@ -166,8 +166,11 @@ python -m epi_agent.cli recent --limit 5
 GET /api/health
 GET /api/dashboard?tab=all&sort=bias_desc&limit=80
 GET /api/events?limit=20
+GET /api/macro/releases?limit=20
 POST /api/markets/sync
 POST /api/events
+POST /api/macro/releases
+POST /api/macro/sync
 ```
 
 请求体：
@@ -179,6 +182,36 @@ POST /api/events
   "live_markets": true
 }
 ```
+
+宏观发布定价请求示例：
+
+```json
+{
+  "event_name": "US CPI YoY",
+  "actual": 3.4,
+  "forecast": 3.1,
+  "previous": 3.0,
+  "benchmark_probability": 0.45,
+  "direction": 1,
+  "market_sensitivity": 0.4,
+  "source_reliability": 0.9
+}
+```
+
+`POST /api/macro/releases` 会保存发布数据，计算 `surprise = actual - forecast` 与 `surprise_z`，并在提供 `benchmark_probability` 时调用 `src/epi_agent/pricing_model.py` 生成 `fair_probability_estimate`。Dashboard 右侧的 `Macro Release Lab` 已接入同一条链路。
+
+`POST /api/macro/sync` 是可选 Trading Economics economic calendar 接口，需要环境变量：
+
+```powershell
+$env:TRADING_ECONOMICS_CLIENT="..."
+$env:TRADING_ECONOMICS_SECRET="..."
+```
+
+当前数据源状态：
+
+* 已接入：Polymarket Gamma API、Polymarket CLOB orderbook、SQLite 本地缓存、手动/API 宏观发布输入。
+* 可选接入：Trading Economics calendar，用于低延迟 actual / forecast / previous。
+* 下一步建议：BLS / BEA / FRED / ALFRED / EIA，用于官方时间序列、vintage、回测与校准。
 
 ## 数据文件
 

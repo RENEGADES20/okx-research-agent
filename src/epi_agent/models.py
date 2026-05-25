@@ -108,6 +108,83 @@ class MarketSnapshot:
 
 
 @dataclass(slots=True)
+class MacroRelease:
+    release_id: str
+    event_name: str
+    country: str = "United States"
+    category: str = "macro"
+    release_time: str = field(default_factory=utc_now_iso)
+    actual: float | None = None
+    forecast: float | None = None
+    previous: float | None = None
+    unit: str | None = None
+    source: str = "manual"
+    source_url: str | None = None
+    surprise: float | None = None
+    surprise_z: float | None = None
+    importance: int = 1
+    created_at: str = field(default_factory=utc_now_iso)
+
+    @classmethod
+    def build(
+        cls,
+        *,
+        event_name: str,
+        country: str = "United States",
+        category: str = "macro",
+        release_time: str | None = None,
+        actual: float | None = None,
+        forecast: float | None = None,
+        previous: float | None = None,
+        unit: str | None = None,
+        source: str = "manual",
+        source_url: str | None = None,
+        surprise_std: float | None = None,
+        importance: int = 1,
+    ) -> "MacroRelease":
+        surprise = None if actual is None or forecast is None else round(actual - forecast, 6)
+        surprise_z = _surprise_z(actual=actual, forecast=forecast, previous=previous, surprise_std=surprise_std)
+        return cls(
+            release_id=str(uuid4()),
+            event_name=event_name,
+            country=country,
+            category=category,
+            release_time=release_time or utc_now_iso(),
+            actual=actual,
+            forecast=forecast,
+            previous=previous,
+            unit=unit,
+            source=source,
+            source_url=source_url,
+            surprise=surprise,
+            surprise_z=surprise_z,
+            importance=importance,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+def _surprise_z(
+    *,
+    actual: float | None,
+    forecast: float | None,
+    previous: float | None,
+    surprise_std: float | None,
+) -> float | None:
+    if actual is None or forecast is None:
+        return None
+    surprise = actual - forecast
+    if surprise_std and surprise_std > 0:
+        scale = surprise_std
+    elif previous is not None and previous != forecast:
+        scale = abs(previous - forecast)
+    else:
+        scale = max(abs(forecast) * 0.1, 0.1)
+    return round(max(-5.0, min(surprise / scale, 5.0)), 4)
+
+
+@dataclass(slots=True)
 class ProbabilityUpdate:
     before_probability: float | None
     after_probability_estimate: tuple[float, float] | None

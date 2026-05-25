@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from epi_agent.models import EventCard, EventInput
+from epi_agent.macro_data import macro_release_from_payload
 from epi_agent.market_universe import parse_market_snapshot
 from epi_agent.service import EPIAgentService
 from epi_agent.store import EventStore
@@ -42,3 +43,24 @@ def test_store_persists_market_snapshots(tmp_path: Path):
     assert len(rows) == 1
     assert rows[0]["bias_bucket"] in {"moderate", "severe"}
     assert rows[0]["benchmark_probability"] == 0.35
+
+
+def test_store_persists_macro_release(tmp_path: Path):
+    store = EventStore(tmp_path / "events.sqlite3")
+    release = macro_release_from_payload(
+        {
+            "event_name": "US CPI YoY",
+            "actual": "3.4",
+            "forecast": "3.1",
+            "previous": "3.0",
+            "source": "manual",
+        }
+    )
+
+    store.save_macro_release(release)
+    rows = store.list_macro_releases()
+
+    assert len(rows) == 1
+    assert rows[0]["event_name"] == "US CPI YoY"
+    assert rows[0]["surprise"] == 0.3
+    assert rows[0]["surprise_z"] == 3.0

@@ -8,6 +8,9 @@ version = "0.1.0"
 description = "Event Probability Intelligence Agent MVP"
 requires-python = ">=3.11"
 
+[project.optional-dependencies]
+dev = ["pytest>=9.0"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

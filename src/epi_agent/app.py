@@ -27,6 +27,11 @@ class EPIRequestHandler(BaseHTTPRequestHandler):
             limit = int(params.get("limit", ["50"])[0])
             self._send_json({"events": self.service.recent_cards(limit=limit)})
             return
+        if parsed.path == "/api/macro/releases":
+            params = parse_qs(parsed.query)
+            limit = int(params.get("limit", ["20"])[0])
+            self._send_json({"releases": self.service.recent_macro_releases(limit=limit)})
+            return
         if parsed.path == "/api/dashboard":
             params = parse_qs(parsed.query)
             tab = params.get("tab", ["all"])[0]
@@ -50,6 +55,31 @@ class EPIRequestHandler(BaseHTTPRequestHandler):
                 enrich_orderbook=enrich_orderbook,
                 max_orderbooks=max_orderbooks,
             )
+            self._send_json(result, status=HTTPStatus.CREATED)
+            return
+
+        if parsed.path == "/api/macro/releases":
+            try:
+                result = self.service.submit_macro_release(self._read_json())
+            except KeyError:
+                self._send_json({"error": "event_name is required"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            except Exception as exc:  # noqa: BLE001 - boundary handler should return JSON.
+                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            self._send_json(result, status=HTTPStatus.CREATED)
+            return
+
+        if parsed.path == "/api/macro/sync":
+            payload = self._read_json()
+            try:
+                result = self.service.sync_macro_calendar(
+                    country=payload.get("country", "United States"),
+                    limit=int(payload.get("limit", 50)),
+                )
+            except Exception as exc:  # noqa: BLE001 - optional upstream boundary.
+                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_GATEWAY)
+                return
             self._send_json(result, status=HTTPStatus.CREATED)
             return
 
@@ -200,8 +230,38 @@ def _dashboard_html() -> str:
             <div><dt>Live source</dt><dd>Polymarket Gamma API</dd></div>
             <div><dt>Benchmark</dt><dd>CLOB midpoint when synced, then bid/ask midpoint, outcome price, last trade</dd></div>
             <div><dt>Bias now</dt><dd>spread, liquidity, depth, volume, staleness, ending soon, missing price</dd></div>
-            <div><dt>Next pricing</dt><dd>macro surprise + market sensitivity -> fair probability</dd></div>
+            <div><dt>Fair pricing</dt><dd>macro surprise + market sensitivity -> log-odds fair probability</dd></div>
           </dl>
+        </section>
+        <section>
+          <h2>Macro Release Lab</h2>
+          <form id="macro-form" class="stack-form">
+            <input id="macro-name" required placeholder="Release name">
+            <div class="field-grid three">
+              <input id="macro-actual" type="number" step="0.0001" required placeholder="Actual">
+              <input id="macro-forecast" type="number" step="0.0001" required placeholder="Forecast">
+              <input id="macro-previous" type="number" step="0.0001" placeholder="Previous">
+            </div>
+            <div class="field-grid two">
+              <input id="macro-benchmark" type="number" min="0.01" max="0.99" step="0.001" placeholder="Benchmark 0-1">
+              <select id="macro-direction">
+                <option value="1">Positive to YES</option>
+                <option value="-1">Negative to YES</option>
+                <option value="0">Neutral</option>
+              </select>
+            </div>
+            <div class="field-grid three">
+              <input id="macro-sensitivity" type="number" min="0" max="2" step="0.05" value="0.35" placeholder="Sensitivity">
+              <input id="macro-reliability" type="number" min="0" max="1" step="0.05" value="0.8" placeholder="Reliability">
+              <input id="macro-std" type="number" min="0" step="0.0001" placeholder="Std">
+            </div>
+            <button type="submit">Price Macro</button>
+          </form>
+          <div id="macro-estimate" class="estimate-box"></div>
+        </section>
+        <section>
+          <h2>Recent Macro</h2>
+          <div id="macro-releases" class="mini-list"></div>
         </section>
         <section>
           <h2>Manual Event Lab</h2>
@@ -237,6 +297,7 @@ def _dashboard_html() -> str:
     let dashboardData = null;
 
     const form = document.querySelector("#event-form");
+    const macroForm = document.querySelector("#macro-form");
     const events = document.querySelector("#events");
     const refresh = document.querySelector("#refresh");
     const syncMarkets = document.querySelector("#sync-markets");
@@ -247,6 +308,8 @@ def _dashboard_html() -> str:
     const marketRows = document.querySelector("#market-rows");
     const endingSoon = document.querySelector("#ending-soon");
     const syncState = document.querySelector("#sync-state");
+    const macroReleases = document.querySelector("#macro-releases");
+    const macroEstimate = document.querySelector("#macro-estimate");
 
     async function loadDashboard() {
       const res = await fetch(`/api/dashboard?tab=${selectedTab}&sort=${sortSelect.value}&limit=120`);
@@ -256,6 +319,7 @@ def _dashboard_html() -> str:
       renderMarkets();
       renderEndingSoon(dashboardData.ending_soon || []);
       renderEvents(dashboardData.recent_events || []);
+      renderMacroReleases(dashboardData.recent_macro_releases || []);
       syncState.textContent = dashboardData.latest_sync
         ? `Latest market sync: ${formatDate(dashboardData.latest_sync)}`
         : "Sync Polymarket markets to populate the dashboard.";
@@ -341,6 +405,31 @@ def _dashboard_html() -> str:
       events.innerHTML = items.map(renderCard).join("") || '<p class="empty">No Event Cards yet.</p>';
     }
 
+    function renderMacroReleases(items) {
+      macroReleases.innerHTML = items.map(item => `
+        <article>
+          <strong>${item.event_name}</strong>
+          <span>${formatDate(item.release_time)} / surprise z ${item.surprise_z ?? "n/a"}</span>
+        </article>
+      `).join("") || '<p class="empty">No macro releases yet.</p>';
+    }
+
+    function renderMacroEstimate(result) {
+      if (!result?.fair_probability_estimate) {
+        macroEstimate.innerHTML = '<p class="empty">Release saved. Add a benchmark to price it.</p>';
+        return;
+      }
+      const estimate = result.fair_probability_estimate;
+      macroEstimate.innerHTML = `
+        <dl>
+          <div><dt>Benchmark</dt><dd>${pct(estimate.benchmark_probability)}</dd></div>
+          <div><dt>Fair</dt><dd>${pct(estimate.fair_probability)}</dd></div>
+          <div><dt>Delta</dt><dd>${pct(estimate.model_delta)}</dd></div>
+          <div><dt>Confidence</dt><dd>${pct(estimate.confidence_score)}</dd></div>
+        </dl>
+      `;
+    }
+
     function renderCard(card) {
       const markets = (card.affected_markets || []).slice(0, 3).map(m => `<li>${m.question} <span>${pct(m.probability)}</span></li>`).join("");
       const range = card.after_probability_estimate ? `${pct(card.after_probability_estimate[0])} - ${pct(card.after_probability_estimate[1])}` : "n/a";
@@ -413,6 +502,40 @@ def _dashboard_html() -> str:
       } finally {
         button.disabled = false;
         button.textContent = "Analyze";
+      }
+    });
+
+    macroForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const button = macroForm.querySelector("button");
+      button.disabled = true;
+      button.textContent = "Pricing";
+      try {
+        const res = await fetch("/api/macro/releases", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            event_name: document.querySelector("#macro-name").value,
+            source: "manual",
+            actual: document.querySelector("#macro-actual").value,
+            forecast: document.querySelector("#macro-forecast").value,
+            previous: document.querySelector("#macro-previous").value,
+            surprise_std: document.querySelector("#macro-std").value,
+            benchmark_probability: document.querySelector("#macro-benchmark").value,
+            direction: document.querySelector("#macro-direction").value,
+            market_sensitivity: document.querySelector("#macro-sensitivity").value,
+            source_reliability: document.querySelector("#macro-reliability").value
+          })
+        });
+        const result = await res.json();
+        renderMacroEstimate(result);
+        macroForm.reset();
+        document.querySelector("#macro-sensitivity").value = "0.35";
+        document.querySelector("#macro-reliability").value = "0.8";
+        await loadDashboard();
+      } finally {
+        button.disabled = false;
+        button.textContent = "Price Macro";
       }
     });
 
