@@ -47,6 +47,7 @@ references/pricing-theory.md
 支持的市场排序：
 
 * Bias score
+* Structure flags
 * Spread high
 * Liquidity low / high
 * Ending soon
@@ -80,6 +81,14 @@ wide spread
 + ending soon with weak book
 + missing benchmark price
 ```
+
+系统也会做基础跨市场一致性检查，例如：
+
+```text
+P(CPI > 4%) >= P(CPI > 5%) >= P(CPI > 6%)
+```
+
+如果同一 event 下的 threshold markets 违反单调性，会显示为 `Structure flags`，并提高对应市场的 bias score。
 
 这不是最终 alpha。下一步接入宏观数据后，核心会变成：
 

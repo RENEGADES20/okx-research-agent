@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from .engine import analyze_event
-from .market_universe import dashboard_summary, sync_market_universe
+from .market_universe import apply_consistency_checks, dashboard_summary, sync_market_universe
 from .models import EventCard, EventInput
 from .polymarket import PolymarketClient
 from .store import EventStore
@@ -46,6 +46,7 @@ class EPIAgentService:
     def dashboard(self, *, tab: str = "all", limit: int = 80, sort: str = "bias_desc") -> dict:
         all_markets = self.store.list_market_snapshots(tab="all", limit=500)
         filtered_markets = _filter_markets_for_tab(all_markets, tab)
+        filtered_markets = apply_consistency_checks(filtered_markets)
         filtered_markets = _sort_markets(filtered_markets, sort)
         markets = filtered_markets[:limit]
         ending_soon = [market for market in filtered_markets if market.get("ending_soon")][:12]
@@ -81,8 +82,14 @@ def _sort_markets(markets: list[dict], sort: str) -> list[dict]:
     sorters = {
         "bias_desc": lambda market: (
             _number(market.get("bias_score")),
+            _number(market.get("consistency_score")),
             int(bool(market.get("ending_soon"))),
             _number(market.get("spread")),
+            _number(market.get("liquidity")),
+        ),
+        "structure_flags": lambda market: (
+            _number(market.get("consistency_score")),
+            _number(market.get("bias_score")),
             _number(market.get("liquidity")),
         ),
         "spread_desc": lambda market: (

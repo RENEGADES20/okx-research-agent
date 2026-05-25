@@ -1,4 +1,4 @@
-from epi_agent.market_universe import dashboard_summary, parse_market_snapshot
+from epi_agent.market_universe import apply_consistency_checks, dashboard_summary, parse_market_snapshot
 
 
 def test_parse_market_snapshot_prefers_bid_ask_midpoint():
@@ -37,3 +37,32 @@ def test_dashboard_summary_counts_bias_buckets():
     assert summary["bias_candidates"] == 2
     assert summary["bias_buckets"]["severe"] == 1
     assert summary["ending_soon"] == 1
+
+
+def test_consistency_checks_flag_threshold_violations():
+    markets = [
+        {
+            "market_id": "gt4",
+            "event_slug": "inflation-2026",
+            "question": "Will inflation reach more than 4% in 2026?",
+            "benchmark_probability": 0.2,
+            "bias_reasons": [],
+            "bias_score": 0.0,
+            "bias_bucket": "none",
+        },
+        {
+            "market_id": "gt5",
+            "event_slug": "inflation-2026",
+            "question": "Will inflation reach more than 5% in 2026?",
+            "benchmark_probability": 0.4,
+            "bias_reasons": [],
+            "bias_score": 0.0,
+            "bias_bucket": "none",
+        },
+    ]
+
+    checked = apply_consistency_checks(markets)
+
+    assert checked[0]["consistency_issue"]
+    assert checked[1]["consistency_issue"]
+    assert checked[0]["bias_bucket"] == "watch"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -131,11 +132,13 @@ def dashboard_summary(markets: list[dict[str, Any]]) -> dict[str, Any]:
     ending_soon = 0
     with_probability = 0
     total_confidence = 0.0
+    structure_flags = 0
 
     for market in markets:
         bucket = market.get("bias_bucket") or "none"
         buckets[bucket] = buckets.get(bucket, 0) + 1
         ending_soon += int(bool(market.get("ending_soon")))
+        structure_flags += int(bool(market.get("consistency_issue")))
         if market.get("benchmark_probability") is not None:
             with_probability += 1
         total_confidence += float(market.get("benchmark_confidence") or 0.0)
@@ -149,8 +152,86 @@ def dashboard_summary(markets: list[dict[str, Any]]) -> dict[str, Any]:
         "bias_candidates": biased,
         "bias_buckets": buckets,
         "ending_soon": ending_soon,
+        "structure_flags": structure_flags,
         "avg_benchmark_confidence": avg_confidence,
     }
+
+
+def apply_consistency_checks(markets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    enriched = [dict(market) for market in markets]
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+
+    for market in enriched:
+        rule = _threshold_rule(market.get("question", ""))
+        market["consistency_group"] = None
+        market["consistency_issue"] = None
+        market["consistency_score"] = 0.0
+        if not rule or market.get("benchmark_probability") is None:
+            continue
+        group_key = (str(market.get("event_slug") or "no-event"), rule["kind"])
+        market["consistency_group"] = f"{group_key[0]}:{group_key[1]}"
+        market["_threshold_rule"] = rule
+        groups.setdefault(group_key, []).append(market)
+
+    for items in groups.values():
+        if len(items) < 2:
+            continue
+        rule_kind = items[0]["_threshold_rule"]["kind"]
+        reverse = rule_kind in {"more_than", "at_least"}
+        sorted_items = sorted(items, key=lambda item: item["_threshold_rule"]["value"])
+        for left, right in zip(sorted_items, sorted_items[1:]):
+            left_probability = float(left.get("benchmark_probability"))
+            right_probability = float(right.get("benchmark_probability"))
+            violation = left_probability + 0.015 < right_probability if reverse else left_probability > right_probability + 0.015
+            if violation:
+                reason = (
+                    f"threshold monotonicity violation: {left['_threshold_rule']['label']} "
+                    f"vs {right['_threshold_rule']['label']}"
+                )
+                _add_consistency_issue(left, reason)
+                _add_consistency_issue(right, reason)
+
+    for market in enriched:
+        market.pop("_threshold_rule", None)
+    return enriched
+
+
+def _add_consistency_issue(market: dict[str, Any], reason: str) -> None:
+    market["consistency_issue"] = reason
+    market["consistency_score"] = max(float(market.get("consistency_score") or 0.0), 0.28)
+    reasons = list(market.get("bias_reasons") or [])
+    if reason not in reasons:
+        reasons.append(reason)
+    market["bias_reasons"] = reasons
+    market["bias_score"] = round(min(float(market.get("bias_score") or 0.0) + 0.28, 1.0), 3)
+    market["bias_bucket"] = _bucket_for_score(market["bias_score"])
+
+
+def _threshold_rule(question: str) -> dict[str, Any] | None:
+    text = question.lower()
+    patterns = (
+        ("more_than", r"(?:more than|above|over|greater than)\s+\$?(\d+(?:\.\d+)?)\s*(%|percent|times|cuts?)?"),
+        ("at_least", r"(?:at least)\s+(\d+(?:\.\d+)?)\s*(%|percent|times|cuts?)?"),
+        ("less_than", r"(?:less than|below|under)\s+\$?(\d+(?:\.\d+)?)\s*(%|percent|times|cuts?)?"),
+        ("at_most", r"(?:at most|no more than)\s+(\d+(?:\.\d+)?)\s*(%|percent|times|cuts?)?"),
+    )
+    for kind, pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            value = float(match.group(1))
+            unit = match.group(2) or ""
+            return {"kind": kind, "value": value, "label": f"{kind.replace('_', ' ')} {value:g}{unit}"}
+    return None
+
+
+def _bucket_for_score(score: float) -> str:
+    if score >= 0.55:
+        return "severe"
+    if score >= 0.32:
+        return "moderate"
+    if score >= 0.12:
+        return "watch"
+    return "none"
 
 
 def _benchmark_probability(
@@ -234,15 +315,7 @@ def _bias_score(
         reasons.append("ending soon with weak book")
 
     score = round(min(score, 1.0), 3)
-    if score >= 0.55:
-        bucket = "severe"
-    elif score >= 0.32:
-        bucket = "moderate"
-    elif score >= 0.12:
-        bucket = "watch"
-    else:
-        bucket = "none"
-    return score, bucket, reasons
+    return score, _bucket_for_score(score), reasons
 
 
 def _matches_tab(snapshot: MarketSnapshot, tab: dict[str, Any]) -> bool:

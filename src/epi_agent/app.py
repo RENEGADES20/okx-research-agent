@@ -128,6 +128,7 @@ def _dashboard_html() -> str:
       <article class="metric"><span>Total markets</span><strong id="metric-total">0</strong></article>
       <article class="metric"><span>Bias candidates</span><strong id="metric-biased">0</strong></article>
       <article class="metric"><span>Severe / Moderate</span><strong id="metric-risk">0 / 0</strong></article>
+      <article class="metric"><span>Structure flags</span><strong id="metric-structure">0</strong></article>
       <article class="metric"><span>Ending soon</span><strong id="metric-ending">0</strong></article>
       <article class="metric"><span>Avg confidence</span><strong id="metric-confidence">0%</strong></article>
     </section>
@@ -148,6 +149,7 @@ def _dashboard_html() -> str:
           </select>
           <select id="sort-select">
             <option value="bias_desc">Bias score</option>
+            <option value="structure_flags">Structure flags</option>
             <option value="spread_desc">Spread high</option>
             <option value="liquidity_asc">Liquidity low</option>
             <option value="liquidity_desc">Liquidity high</option>
@@ -276,6 +278,7 @@ def _dashboard_html() -> str:
       document.querySelector("#metric-total").textContent = summary.total_markets || 0;
       document.querySelector("#metric-biased").textContent = summary.bias_candidates || 0;
       document.querySelector("#metric-risk").textContent = `${buckets.severe || 0} / ${buckets.moderate || 0}`;
+      document.querySelector("#metric-structure").textContent = summary.structure_flags || 0;
       document.querySelector("#metric-ending").textContent = summary.ending_soon || 0;
       document.querySelector("#metric-confidence").textContent = pct(summary.avg_benchmark_confidence || 0);
     }
