@@ -32,6 +32,18 @@ Polymarket market universe
 references/pricing-theory.md
 ```
 
+## Dashboard
+
+首页现在是 market-first dashboard。点击 `Sync Markets` 会同步 Polymarket 活跃市场，生成 benchmark snapshot，并展示：
+
+* 定价偏差候选数量
+* severe / moderate / watch 分桶
+* 即将结束的市场
+* 按 All、Finance / Macro、Fed / Rates、Inflation、Economy、Politics、Geopolitics、Energy 切换的市场 tab
+* 手动事件分析 lab
+
+当前 bias candidate 是 benchmark-level 检查，主要根据 `spread`、`liquidity`、`volume`、`staleness`、`ending soon`、是否有可用价格判断。接入宏观数据和定价模型后，会升级为 `fair_probability - benchmark_probability` 的真正 repricing gap。
+
 ## 运行
 
 ```powershell
@@ -81,7 +93,9 @@ python -m epi_agent.cli recent --limit 5
 
 ```http
 GET /api/health
+GET /api/dashboard?tab=all&limit=80
 GET /api/events?limit=20
+POST /api/markets/sync
 POST /api/events
 ```
 

@@ -60,6 +60,47 @@ class Market:
 
 
 @dataclass(slots=True)
+class MarketSnapshot:
+    market_id: str
+    question: str
+    condition_id: str | None = None
+    description: str | None = None
+    slug: str | None = None
+    event_slug: str | None = None
+    vertical: str = "unknown"
+    tab: str = "all"
+    tags: list[str] = field(default_factory=list)
+    tag_ids: list[int] = field(default_factory=list)
+    outcomes: list[str] = field(default_factory=list)
+    clob_token_ids: list[str] = field(default_factory=list)
+    active: bool = True
+    closed: bool = False
+    end_date: str | None = None
+    benchmark_probability: float | None = None
+    benchmark_source: str = "unavailable"
+    best_bid: float | None = None
+    best_ask: float | None = None
+    midpoint: float | None = None
+    last_trade_price: float | None = None
+    outcome_price: float | None = None
+    spread: float | None = None
+    liquidity: float | None = None
+    volume: float | None = None
+    volume_24h: float | None = None
+    updated_at: str | None = None
+    synced_at: str = field(default_factory=utc_now_iso)
+    staleness_hours: float | None = None
+    benchmark_confidence: float = 0.0
+    bias_score: float = 0.0
+    bias_bucket: str = "none"
+    bias_reasons: list[str] = field(default_factory=list)
+    ending_soon: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(slots=True)
 class ProbabilityUpdate:
     before_probability: float | None
     after_probability_estimate: tuple[float, float] | None

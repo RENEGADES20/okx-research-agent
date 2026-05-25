@@ -50,6 +50,73 @@ SOURCE_RELIABILITY = {
     "manual": 0.55,
 }
 
+MARKET_TABS = (
+    {
+        "id": "all",
+        "label": "All",
+        "vertical": "all",
+        "tag_ids": [120, 159, 100196, 702, 100328, 102000, 2],
+        "keywords": (),
+    },
+    {
+        "id": "finance_macro",
+        "label": "Finance / Macro",
+        "vertical": "finance_macro",
+        "tag_ids": [120, 159, 100196, 702, 100328, 102000],
+        "keywords": (),
+    },
+    {
+        "id": "fed_rates",
+        "label": "Fed / Rates",
+        "vertical": "finance_macro",
+        "tag_ids": [159, 100196],
+        "keywords": ("fed", "fomc", "rate", "cut", "hike"),
+    },
+    {
+        "id": "inflation",
+        "label": "Inflation",
+        "vertical": "finance_macro",
+        "tag_ids": [702],
+        "keywords": ("cpi", "pce", "inflation"),
+    },
+    {
+        "id": "economy",
+        "label": "Economy",
+        "vertical": "finance_macro",
+        "tag_ids": [100328, 102000],
+        "keywords": ("gdp", "unemployment", "jobs", "recession", "yield"),
+    },
+    {
+        "id": "politics",
+        "label": "Politics",
+        "vertical": "politics_geopolitics",
+        "tag_ids": [2],
+        "keywords": ("election", "nominee", "congress", "court", "president"),
+    },
+    {
+        "id": "geopolitics",
+        "label": "Geopolitics",
+        "vertical": "politics_geopolitics",
+        "tag_ids": [2],
+        "keywords": ("war", "ceasefire", "peace", "iran", "ukraine", "sanction", "hormuz"),
+    },
+    {
+        "id": "energy",
+        "label": "Energy",
+        "vertical": "finance_macro",
+        "tag_ids": [120],
+        "keywords": ("oil", "wti", "gas", "energy", "hormuz", "opec"),
+    },
+)
+
+
+def market_tabs() -> list[dict]:
+    return [dict(tab) for tab in MARKET_TABS]
+
+
+def tab_definition(tab_id: str) -> dict:
+    return next((dict(tab) for tab in MARKET_TABS if tab["id"] == tab_id), dict(MARKET_TABS[0]))
+
 
 def classify_event(summary: str, source_type: str = "manual") -> ClassifiedEvent:
     text = summary.lower()

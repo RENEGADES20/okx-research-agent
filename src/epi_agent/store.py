@@ -6,7 +6,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from .models import EventCard, Market
+from .models import EventCard, Market, MarketSnapshot
 
 
 DEFAULT_DB_PATH = Path("data/epi_agent.sqlite3")
@@ -72,6 +72,67 @@ class EventStore:
             row = conn.execute("SELECT * FROM event_cards WHERE event_id = ?", (event_id,)).fetchone()
         return self._row_to_dict(row) if row else None
 
+    def save_market_snapshots(self, snapshots: list[MarketSnapshot]) -> None:
+        if not snapshots:
+            return
+        with self._connect() as conn:
+            conn.executemany(
+                """
+                INSERT OR REPLACE INTO market_snapshots (
+                    market_id, condition_id, question, description, slug, event_slug,
+                    vertical, tab, tags, tag_ids, outcomes, clob_token_ids, active,
+                    closed, end_date, benchmark_probability, benchmark_source,
+                    best_bid, best_ask, midpoint, last_trade_price, outcome_price,
+                    spread, liquidity, volume, volume_24h, updated_at, synced_at,
+                    staleness_hours, benchmark_confidence, bias_score, bias_bucket,
+                    bias_reasons, ending_soon
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [self._market_snapshot_values(snapshot) for snapshot in snapshots],
+            )
+
+    def list_market_snapshots(
+        self,
+        *,
+        tab: str = "all",
+        limit: int = 100,
+        bucket: str | None = None,
+    ) -> list[dict[str, Any]]:
+        query = "SELECT * FROM market_snapshots"
+        clauses: list[str] = []
+        params: list[Any] = []
+        if tab != "all":
+            clauses.append("(tab = ? OR vertical = ?)")
+            params.extend([tab, tab])
+        if bucket:
+            clauses.append("bias_bucket = ?")
+            params.append(bucket)
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY bias_score DESC, ending_soon DESC, liquidity DESC LIMIT ?"
+        params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [self._market_row_to_dict(row) for row in rows]
+
+    def ending_soon_markets(self, *, tab: str = "all", limit: int = 12) -> list[dict[str, Any]]:
+        query = "SELECT * FROM market_snapshots WHERE ending_soon = 1"
+        params: list[Any] = []
+        if tab != "all":
+            query += " AND (tab = ? OR vertical = ?)"
+            params.extend([tab, tab])
+        query += " ORDER BY end_date ASC LIMIT ?"
+        params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [self._market_row_to_dict(row) for row in rows]
+
+    def latest_market_sync(self) -> str | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT MAX(synced_at) AS synced_at FROM market_snapshots").fetchone()
+        return row["synced_at"] if row and row["synced_at"] else None
+
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
@@ -104,6 +165,46 @@ class EventStore:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS market_snapshots (
+                    market_id TEXT PRIMARY KEY,
+                    condition_id TEXT,
+                    question TEXT NOT NULL,
+                    description TEXT,
+                    slug TEXT,
+                    event_slug TEXT,
+                    vertical TEXT NOT NULL,
+                    tab TEXT NOT NULL,
+                    tags TEXT NOT NULL,
+                    tag_ids TEXT NOT NULL,
+                    outcomes TEXT NOT NULL,
+                    clob_token_ids TEXT NOT NULL,
+                    active INTEGER NOT NULL,
+                    closed INTEGER NOT NULL,
+                    end_date TEXT,
+                    benchmark_probability REAL,
+                    benchmark_source TEXT NOT NULL,
+                    best_bid REAL,
+                    best_ask REAL,
+                    midpoint REAL,
+                    last_trade_price REAL,
+                    outcome_price REAL,
+                    spread REAL,
+                    liquidity REAL,
+                    volume REAL,
+                    volume_24h REAL,
+                    updated_at TEXT,
+                    synced_at TEXT NOT NULL,
+                    staleness_hours REAL,
+                    benchmark_confidence REAL NOT NULL,
+                    bias_score REAL NOT NULL,
+                    bias_bucket TEXT NOT NULL,
+                    bias_reasons TEXT NOT NULL,
+                    ending_soon INTEGER NOT NULL
+                )
+                """
+            )
 
     @staticmethod
     def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
@@ -111,6 +212,55 @@ class EventStore:
         for key in ("related_polymarket_tags", "affected_markets", "after_probability_estimate"):
             if value.get(key) is not None:
                 value[key] = json.loads(value[key])
+        return value
+
+    @staticmethod
+    def _market_snapshot_values(snapshot: MarketSnapshot) -> tuple:
+        return (
+            snapshot.market_id,
+            snapshot.condition_id,
+            snapshot.question,
+            snapshot.description,
+            snapshot.slug,
+            snapshot.event_slug,
+            snapshot.vertical,
+            snapshot.tab,
+            json.dumps(snapshot.tags),
+            json.dumps(snapshot.tag_ids),
+            json.dumps(snapshot.outcomes),
+            json.dumps(snapshot.clob_token_ids),
+            int(snapshot.active),
+            int(snapshot.closed),
+            snapshot.end_date,
+            snapshot.benchmark_probability,
+            snapshot.benchmark_source,
+            snapshot.best_bid,
+            snapshot.best_ask,
+            snapshot.midpoint,
+            snapshot.last_trade_price,
+            snapshot.outcome_price,
+            snapshot.spread,
+            snapshot.liquidity,
+            snapshot.volume,
+            snapshot.volume_24h,
+            snapshot.updated_at,
+            snapshot.synced_at,
+            snapshot.staleness_hours,
+            snapshot.benchmark_confidence,
+            snapshot.bias_score,
+            snapshot.bias_bucket,
+            json.dumps(snapshot.bias_reasons),
+            int(snapshot.ending_soon),
+        )
+
+    @staticmethod
+    def _market_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+        value = dict(row)
+        for key in ("tags", "tag_ids", "outcomes", "clob_token_ids", "bias_reasons"):
+            value[key] = json.loads(value[key]) if value.get(key) else []
+        value["active"] = bool(value["active"])
+        value["closed"] = bool(value["closed"])
+        value["ending_soon"] = bool(value["ending_soon"])
         return value
 
 
