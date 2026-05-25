@@ -283,6 +283,23 @@ td span {
   padding: 16px;
 }
 
+.logic-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin: 0;
+}
+
+.logic-list div {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.logic-list div:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
 .mini-list {
   display: grid;
   gap: 10px;

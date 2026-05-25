@@ -44,6 +44,49 @@ references/pricing-theory.md
 
 当前 bias candidate 是 benchmark-level 检查，主要根据 `spread`、`liquidity`、`volume`、`staleness`、`ending soon`、是否有可用价格判断。接入宏观数据和定价模型后，会升级为 `fair_probability - benchmark_probability` 的真正 repricing gap。
 
+支持的市场排序：
+
+* Bias score
+* Spread high
+* Liquidity low / high
+* Ending soon
+* Confidence low
+* Benchmark high / low
+* Volume high
+
+当前实际接入的数据源：
+
+* Polymarket Gamma API：市场列表、问题文本、tag、event slug、end date、liquidity、volume、outcome price、best bid / best ask 等字段。
+* Polymarket CLOB orderbook：客户端已有 `get_orderbook()` 接口，后续会用于补充更细盘口；当前 dashboard 优先使用 Gamma 返回的 bid / ask 字段。
+* SQLite 本地缓存：保存 market benchmark snapshot 和 Event Card，避免每次刷新都重新抓取历史数据。
+
+当前定价逻辑：
+
+```text
+benchmark_probability =
+best_bid / best_ask midpoint
+-> outcomePrices
+-> lastTradePrice
+```
+
+当前 bias bucket 仍是市场数据质量和盘口结构判断：
+
+```text
+bias_score =
+wide spread
++ low liquidity
++ low volume
++ stale benchmark
++ ending soon with weak book
++ missing benchmark price
+```
+
+这不是最终 alpha。下一步接入宏观数据后，核心会变成：
+
+```text
+repricing_gap = model_fair_probability - market_benchmark_probability
+```
+
 ## 运行
 
 ```powershell
@@ -93,7 +136,7 @@ python -m epi_agent.cli recent --limit 5
 
 ```http
 GET /api/health
-GET /api/dashboard?tab=all&limit=80
+GET /api/dashboard?tab=all&sort=bias_desc&limit=80
 GET /api/events?limit=20
 POST /api/markets/sync
 POST /api/events

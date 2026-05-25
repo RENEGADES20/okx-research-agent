@@ -30,8 +30,9 @@ class EPIRequestHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/dashboard":
             params = parse_qs(parsed.query)
             tab = params.get("tab", ["all"])[0]
+            sort = params.get("sort", ["bias_desc"])[0]
             limit = int(params.get("limit", ["80"])[0])
-            self._send_json(self.service.dashboard(tab=tab, limit=limit))
+            self._send_json(self.service.dashboard(tab=tab, limit=limit, sort=sort))
             return
         self._send_json({"error": "not_found"}, status=HTTPStatus.NOT_FOUND)
 
@@ -145,6 +146,17 @@ def _dashboard_html() -> str:
             <option value="watch">Watch</option>
             <option value="none">None</option>
           </select>
+          <select id="sort-select">
+            <option value="bias_desc">Bias score</option>
+            <option value="spread_desc">Spread high</option>
+            <option value="liquidity_asc">Liquidity low</option>
+            <option value="liquidity_desc">Liquidity high</option>
+            <option value="ending_soon">Ending soon</option>
+            <option value="confidence_asc">Confidence low</option>
+            <option value="benchmark_desc">Benchmark high</option>
+            <option value="benchmark_asc">Benchmark low</option>
+            <option value="volume_desc">Volume high</option>
+          </select>
         </div>
         <div class="table-wrap">
           <table>
@@ -167,6 +179,15 @@ def _dashboard_html() -> str:
         <section>
           <h2>Ending Soon</h2>
           <div id="ending-soon" class="mini-list"></div>
+        </section>
+        <section>
+          <h2>Sources & Logic</h2>
+          <dl class="logic-list">
+            <div><dt>Live source</dt><dd>Polymarket Gamma API</dd></div>
+            <div><dt>Benchmark</dt><dd>bid/ask midpoint, then outcome price, then last trade</dd></div>
+            <div><dt>Bias now</dt><dd>spread, liquidity, volume, staleness, ending soon, missing price</dd></div>
+            <div><dt>Next pricing</dt><dd>macro surprise + market sensitivity -> fair probability</dd></div>
+          </dl>
         </section>
         <section>
           <h2>Manual Event Lab</h2>
@@ -207,12 +228,13 @@ def _dashboard_html() -> str:
     const syncMarkets = document.querySelector("#sync-markets");
     const tabs = document.querySelector("#market-tabs");
     const bucketFilter = document.querySelector("#bucket-filter");
+    const sortSelect = document.querySelector("#sort-select");
     const marketRows = document.querySelector("#market-rows");
     const endingSoon = document.querySelector("#ending-soon");
     const syncState = document.querySelector("#sync-state");
 
     async function loadDashboard() {
-      const res = await fetch(`/api/dashboard?tab=${selectedTab}&limit=120`);
+      const res = await fetch(`/api/dashboard?tab=${selectedTab}&sort=${sortSelect.value}&limit=120`);
       dashboardData = await res.json();
       renderTabs(dashboardData.tabs || []);
       renderSummary(dashboardData.summary || {});
@@ -320,6 +342,7 @@ def _dashboard_html() -> str:
     });
 
     bucketFilter.addEventListener("change", renderMarkets);
+    sortSelect.addEventListener("change", loadDashboard);
 
     syncMarkets.addEventListener("click", async () => {
       syncMarkets.disabled = true;
