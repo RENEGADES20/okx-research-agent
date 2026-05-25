@@ -1,16 +1,36 @@
 # Event Probability Intelligence Agent MVP
 
-本仓库实现了 `prd.txt` 中定义的 MVP：把现实世界事件映射到 Polymarket 预测市场，并生成可保存、可回放的 Event Card。
+本仓库实现了 `prd.txt` 中定义的 MVP：以 Polymarket 市场为 benchmark，把现实世界事件和宏观数据映射到预测市场，估算 fair probability、probability delta 和 repricing gap，并生成可保存、可回放的 Event Card。
 
 ## 已包含能力
 
 * 事件输入：手动/API 输入宏观、政治、地缘政治、监管、公司和市场波动事件。
 * 事件分类：输出 `vertical`、`event_type`、相关 Polymarket tag、重要性和来源可靠性。
 * 市场发现：按 `tag_id -> related tags -> event slug -> market slug -> semantic similarity` 的顺序调用 Polymarket Gamma API。
+* 市场基准：以 Polymarket 当前定价、midpoint、spread、liquidity、volume 作为 benchmark。
 * 概率更新：生成 market price、fair probability range、probability delta、confidence score。
 * 市场反应判断：输出 `underreacted`、`overreacted`、`repriced_appropriately` 或 `insufficient_market_data`。
 * Research Memory：使用 SQLite 保存 Event Card。
 * 本地 dashboard/API：无需第三方依赖即可运行。
+
+## 下一阶段设计
+
+项目路线已升级为 market-first pricing engine：
+
+```text
+Polymarket market universe
+-> benchmark probability
+-> macro / event data
+-> fair probability
+-> repricing gap
+-> mispricing signal
+```
+
+定价理论和数据源选择见：
+
+```text
+references/pricing-theory.md
+```
 
 ## 运行
 

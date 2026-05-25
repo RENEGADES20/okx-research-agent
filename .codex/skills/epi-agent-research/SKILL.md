@@ -16,6 +16,17 @@ real-world event
 -> market repricing / inefficiency
 ```
 
+Current product direction is market-first:
+
+```text
+Polymarket market universe
+-> benchmark probability
+-> macro / event data
+-> fair probability
+-> repricing gap
+-> mispricing signal
+```
+
 The canonical project document is `prd.txt` in the repository root.
 
 ## Workflow
@@ -29,6 +40,7 @@ The canonical project document is `prd.txt` in the repository root.
 4. Update the PRD in Chinese unless the user asks otherwise.
 5. Preserve the OKX Onchain OS / OKX Wallet / X Layer deployment direction.
 6. Keep the MVP focused on Finance/Macro and Politics/Geopolitics unless the user explicitly expands scope.
+7. Read `references/pricing-theory.md` when the task concerns fair probability, pricing strategy, conditional probability, historical windows, model calibration, or market bias.
 
 ## Market Discovery Rules
 
@@ -61,11 +73,15 @@ When updating `prd.txt`, make sure these concepts remain explicit:
   * `Finance / Macro Event Intelligence`
   * `Politics / Geopolitical Event Intelligence`
 * Core product logic:
+  * market universe sync
+  * market benchmark probability
   * event detection
   * event classification
   * market mapping
+  * fair probability estimation
   * probability update
   * market repricing analysis
+  * repricing gap / mispricing signal
   * research memory
 * Event types:
   * `macro_event`

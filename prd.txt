@@ -325,19 +325,25 @@ major campaign event
 
 # 4. 产品核心逻辑
 
+当前产品逻辑升级为 market-first pricing engine。
+
 核心抽象：
 
 ```text
-Event
-→ Probability Update
-→ Market Reaction
+Polymarket Market Universe
+→ Market Benchmark Probability
+→ Event / Macro Data
+→ Fair Probability Estimate
+→ Probability Delta
+→ Mispricing / Repricing Signal
 ```
 
 核心问题：
 
 ```text
-某个事件发生后，
-市场概率是否已经充分反映该事件？
+某个 prediction market 的当前定价，
+在已知事件、宏观数据、历史窗口和市场结构下，
+是否偏离 EPI Agent 的 fair probability？
 ```
 
 Agent 核心能力：
@@ -349,11 +355,235 @@ overreaction
 delayed repricing
 ```
 
+重要约束：
+
+```text
+Polymarket 当前价格是 benchmark，不是最终真概率。
+EPI Agent 必须输出独立 fair probability，并解释它与 benchmark 的差异来源。
+```
+
+---
+
+## 4.1 Market Benchmark 与初始偏差分析
+
+系统接入 Polymarket 市场 API 后，第一步不是立即爬事件，而是先建立 market universe。
+
+Market Universe 字段：
+
+```text
+market_id
+condition_id
+question
+description
+resolution_source
+slug
+event_slug
+tags
+outcomes
+clob_token_ids
+active
+closed
+end_date
+volume
+liquidity
+updated_at
+```
+
+Market Benchmark 字段：
+
+```text
+best_bid
+best_ask
+midpoint
+last_trade_price
+outcome_price
+spread
+liquidity
+volume_24h
+volume_1w
+price_timestamp
+staleness_score
+benchmark_confidence
+```
+
+Benchmark 优先级：
+
+```text
+best_bid / best_ask midpoint
+→ outcomePrices
+→ lastTradePrice
+→ fallback market displayed probability
+```
+
+初始偏差分析：
+
+```text
+1. 检查同一 event 下互斥市场概率是否接近 100%
+2. 检查 nested / threshold markets 是否满足单调性
+3. 检查 wide spread、低 liquidity、stale price 导致的价格噪声
+4. 检查同一宏观变量不同到期市场之间是否存在期限结构异常
+5. 检查相关市场之间是否违反基本条件概率关系
+```
+
+示例：
+
+```text
+P(CPI > 3%) >= P(CPI > 4%) >= P(CPI > 5%)
+P(Fed cuts at least 1 time) >= P(Fed cuts at least 2 times)
+P(candidate wins nomination) >= P(candidate wins general election | must be nominee first 的近似约束)
+```
+
+---
+
+## 4.2 自有定价策略
+
+EPI Agent 需要为每类市场维护定价策略模板。
+
+第一阶段使用可解释的 event-driven repricing model，而不是黑箱交易模型。
+
+最小可行公式：
+
+```text
+prior = market_benchmark_probability
+event_delta = direction
+            × surprise_score
+            × market_sensitivity
+            × time_decay
+            × source_reliability
+            × liquidity_adjustment
+
+fair_probability = clamp(prior + event_delta, 0.01, 0.99)
+```
+
+更稳健版本：
+
+```text
+logit(p) = ln(p / (1 - p))
+posterior_logit = logit(prior) + evidence_weight
+fair_probability = sigmoid(posterior_logit)
+```
+
+输出：
+
+```text
+benchmark_probability
+fair_probability
+model_delta
+market_delta
+repricing_gap
+confidence_score
+signal_strength
+```
+
+偏差判断：
+
+```text
+repricing_gap > threshold
+→ underreaction
+
+repricing_gap < -threshold
+→ overreaction
+
+abs(repricing_gap) <= threshold
+→ repriced appropriately
+```
+
+---
+
+## 4.3 历史窗口、重大事件与去重抓取
+
+每个市场需要一个有效历史窗口。
+
+默认：
+
+```text
+lookback_window = 180 days
+```
+
+可调整：
+
+```text
+Fed / inflation near-term markets: 90-180 days
+annual macro threshold markets: 365 days
+election markets: 180-730 days
+geopolitical conflict markets: 30-180 days
+company valuation / M&A markets: 180-365 days
+```
+
+数据抓取策略：
+
+```text
+首次同步：
+拉取 lookback_window 内的市场价格、宏观数据、重大事件。
+
+增量同步：
+只拉取 last_successful_sync_at 之后的新数据。
+
+重大数据发布：
+按 release calendar 触发即时更新定价模型。
+
+修正数据：
+保留 vintage，不覆盖历史可见值。
+```
+
+去重键：
+
+```text
+source_name
+series_id / market_id / event_id
+observation_time
+release_time
+content_hash
+revision_version
+```
+
+---
+
+## 4.4 理论依据
+
+定价逻辑必须受已验证的预测市场、事件研究和概率评分文献约束。
+
+项目内理论参考文件：
+
+```text
+references/pricing-theory.md
+```
+
+核心理论来源：
+
+* Prediction markets as information aggregation
+* Prediction market price vs probability 的解释限制
+* Event study methodology
+* Bayesian / conditional probability update
+* Proper scoring rules, Brier score, log loss, calibration
+
 ---
 
 # 5. Agent 工作流程
 
-# Step 1 — Event Detection
+# Step 0 — Market Universe Sync
+
+同步 Polymarket 当前活跃市场。
+
+输入：
+
+```text
+Gamma API /markets
+Gamma API /public-search
+CLOB pricing / orderbook endpoints
+```
+
+输出：
+
+```text
+Market Universe
+Market Benchmark Snapshot
+Market Semantics Index
+```
+
+---
+
+# Step 1 — Event / Data Detection
 
 监控：
 
@@ -366,11 +596,14 @@ delayed repricing
 * ceasefire / war / peace agreement updates
 * court / regulatory / political announcement
 * market move
+* Polymarket market price / liquidity / spread move
 
 触发：
 
 ```text
 event ingestion
+market benchmark update
+macro release update
 ```
 
 ---
@@ -419,7 +652,7 @@ US-Iran ceasefire 延长
 
 # Step 3 — Market Mapping
 
-将事件映射到 prediction market。
+将事件映射到 prediction market，同时允许从 market universe 反向寻找相关事件源。
 
 Polymarket mapping 优先级：
 
@@ -466,6 +699,9 @@ Before probability
 After probability estimate
 Probability delta
 Confidence score
+Benchmark probability
+Fair probability
+Repricing gap
 ```
 
 例如：
@@ -754,18 +990,83 @@ Onchain OS 负责：
 
 支持：
 
+* market universe sync
 * market discovery via tag_id
 * related tags
 * event slug
 * market slug
-* market price
+* market benchmark probability
 * orderbook
 * liquidity
 * spread
 * midpoint
 * historical price
+* benchmark confidence
+* staleness score
+* cross-market consistency checks
 
 ---
+
+## Market Benchmark / Bias Analysis
+
+支持：
+
+* 将 Polymarket 当前价格作为 benchmark
+* 检查互斥市场概率和是否异常
+* 检查 threshold / nested markets 单调性
+* 检查条件概率关系是否明显冲突
+* 检查 liquidity、spread、stale price 导致的虚假偏差
+* 输出初始 mispricing candidate
+
+---
+
+## Macro Data Integration
+
+第一阶段数据源优先级：
+
+```text
+1. Trading Economics 或同类 economic calendar：actual / forecast / previous / release time
+2. BLS：CPI / PPI / NFP / unemployment / wages 官方值
+3. BEA：GDP / PCE / personal income 官方值
+4. FRED / ALFRED：历史序列、vintage、release dates
+5. EIA：oil inventory、energy supply、gas、petroleum
+```
+
+核心要求：
+
+* 支持 `actual - forecast` surprise
+* 支持 revision / vintage
+* 支持 release calendar 触发即时更新
+* 支持 per-market lookback window
+* 支持增量抓取，避免重复爬取旧数据
+
+---
+
+## Pricing Strategy / Model Evaluation
+
+MVP 必须输出：
+
+```text
+benchmark_probability
+fair_probability
+model_delta
+market_delta
+repricing_gap
+confidence_score
+pricing_reason
+```
+
+模型评分：
+
+```text
+Brier Score
+Log Loss
+Calibration curve
+Market-relative error
+Walk-forward validation
+```
+
+只有通过历史窗口验证的策略，才能输出 high-confidence signal。
 
 ## Agent Output
 
@@ -776,7 +1077,10 @@ Onchain OS 负责：
 事件类型
 所属板块
 相关市场
+benchmark probability
+fair probability
 概率变化
+repricing gap
 市场反应
 confidence score
 pricing inefficiency
@@ -833,77 +1137,77 @@ pricing inefficiency
 
 # Phase 1
 
-Event ingestion for macro + politics.
+Polymarket market universe and benchmark snapshots.
 
 目标：
 
 ```text
-稳定监控宏观、政治、地缘政治事件。
+稳定同步活跃市场、价格、盘口、流动性、spread、历史价格，形成 benchmark。
 ```
 
 ---
 
 # Phase 2
 
-Polymarket market discovery and integration.
+Market semantics and initial bias analysis.
 
 目标：
 
 ```text
-使用 tag_id / event slug / market slug 获取 Polymarket 市场数据。
+建立 question / description / resolution / tags / event slug 的语义索引，
+并检查互斥、nested、threshold、条件概率异常。
 ```
 
 ---
 
 # Phase 3
 
-Market mapping ontology.
+Macro data ingestion and historical window cache.
 
 目标：
 
 ```text
-把 macro_event、political_event、geopolitical_event 映射到相关 prediction markets。
+接入 calendar、BLS、BEA、FRED/ALFRED、EIA，
+支持首次回填和增量更新，避免重复抓取。
 ```
 
 ---
 
 # Phase 4
 
-Probability update engine.
+Market-specific pricing strategies.
 
 目标：
 
 ```text
-生成 fair probability range 和 probability delta。
+为 Fed/rates、inflation、macro state、energy、election、geopolitics
+建立可解释的 event-driven repricing model。
 ```
 
 ---
 
 # Phase 5
 
-Research dashboard.
+Model validation and calibration.
 
 目标：
 
 ```text
-展示：
-事件
-板块
-概率变化
-市场反应
-pricing inefficiency
+使用 Brier Score、Log Loss、Calibration curve、walk-forward validation
+评估模型是否优于 market benchmark 或 naive baseline。
 ```
 
 ---
 
 # Phase 6
 
-Historical event memory.
+Research dashboard and signal layer.
 
 目标：
 
 ```text
-形成 event intelligence database。
+展示 market benchmark、fair probability、repricing gap、confidence、
+pricing inefficiency、历史证据和模型评分。
 ```
 
 ---
@@ -937,3 +1241,19 @@ Polymarket 官方资料：
 * Gamma API docs: https://docs.polymarket.com/api-reference
 * List markets: https://docs.polymarket.com/api-reference/markets/list-markets
 * Search API: https://docs.polymarket.com/api-reference/search/search-markets-events-and-profiles
+
+宏观数据源：
+
+* BLS Public Data API: https://www.bls.gov/developers/
+* BEA API: https://apps.bea.gov/API/signup/
+* FRED API: https://fred.stlouisfed.org/docs/api/fred/
+* EIA Open Data: https://www.eia.gov/opendata/
+
+定价与预测理论：
+
+* Wolfers and Zitzewitz, Prediction Markets: https://www.nber.org/papers/w10504
+* Wolfers and Zitzewitz, Interpreting Prediction Market Prices as Probabilities: https://www.nber.org/papers/w12200
+* Manski, Interpreting the predictions of prediction markets: https://doi.org/10.1016/j.econlet.2006.01.004
+* MacKinlay, Event Studies in Economics and Finance: https://econpapers.repec.org/RePEc:aea:jeclit:v:35:y:1997:i:1:p:13-39
+* Brier, Verification of Forecasts Expressed in Terms of Probability: https://doi.org/10.1175/1520-0493(1950)078%3C0001:VOFEIT%3E2.0.CO;2
+* Gneiting and Raftery, Strictly Proper Scoring Rules, Prediction, and Estimation: https://doi.org/10.1198/016214506000001437
